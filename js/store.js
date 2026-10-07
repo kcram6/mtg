@@ -83,7 +83,8 @@ export function updatePrices(scryfallCards) {
 export const getCard = (id) => data.cards[id];
 export const cardType = (card) => card.card_type ?? mainType(card.type_line);
 // Cards saved before mana value / type were stored; refresh these from Scryfall.
-export const idsMissingDetails = () => Object.keys(data.cards).filter((id) => data.cards[id].cmc === undefined);
+export const idsMissingDetails = () =>
+  Object.keys(data.cards).filter((id) => data.cards[id].cmc === undefined || data.cards[id].flavor_name === undefined);
 export const getEntry = (id) => data.inventory.find((e) => e.id === id);
 export const ownedScryfallIds = () => [...new Set(data.inventory.map((e) => e.scryfall_id))];
 

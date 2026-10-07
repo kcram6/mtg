@@ -30,7 +30,7 @@ const SCHEMA = {
 const PROMPT = `This is a phone camera photo of someone holding up a Magic: The Gathering card to log it in their collection.
 
 Report:
-- name: the card name exactly as printed in the title bar (for double-faced cards, the front face name).
+- name: the card name exactly as printed in the title bar (for double-faced cards, the front face name). Some special printings, like Secret Lair or crossover versions, print an alternate name (e.g. "Pelican Town"); report what is printed.
 - set_code: the 3-5 character set code in the bottom-left corner (e.g. "C21", "MH3", "WOE"). Null if not printed or not legible.
 - collector_number: the collector number in the bottom-left, without the set total (e.g. "263/350" -> "263", "0042" -> "42"). Keep any letter suffix. Null if not legible.
 - is_token: true if this is a token card (its type line starts with "Token", e.g. a Treasure, Food, or a 1/1 Goblin token), otherwise false. For tokens, set_code and collector_number are still the ones printed in the bottom-left.

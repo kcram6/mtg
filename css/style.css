@@ -220,6 +220,8 @@ select.sort {
 .tag.deck { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
 .qty { color: var(--accent); margin-right: 5px; }
 
+.printed-as { font-size: 12.5px; color: #c4b5fd; font-style: italic; margin-top: 1px; }
+
 /* ---------- Collection ---------- */
 .chips { display: flex; gap: 8px; overflow-x: auto; margin: 14px -16px 0; padding: 0 16px 2px; scrollbar-width: none; }
 .chips::-webkit-scrollbar { display: none; }

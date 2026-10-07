@@ -19,6 +19,9 @@ const manaCost = (cost) =>
     .map((sym) => `<img class="mana" src="https://svgs.scryfall.io/card-symbols/${encodeURIComponent(sym.slice(1, -1).replace(/\//g, ""))}.svg" alt="${esc(sym)}">`)
     .join("");
 
+// Special printings (e.g. Secret Lair) show another name on the card.
+const printedAs = (card) => (card?.flavor_name ? `<div class="printed-as">Printed as “${esc(card.flavor_name)}”</div>` : "");
+
 const deckLabel = (deckId) => store.getDeck(deckId)?.name ?? "Extras";
 const deckTag = (deckId) =>
   `<span class="tag ${deckId && store.getDeck(deckId) ? "deck" : ""}">${icon(store.getDeck(deckId) ? "swords" : "inbox")}${esc(deckLabel(deckId))}</span>`;
@@ -400,6 +403,7 @@ function renderRecent() {
           <img src="${esc(card.image_small)}" alt="" loading="lazy">
           <div class="info">
             <div class="name">${esc(card.name)}</div>
+            ${printedAs(card)}
             <div class="meta">${manaCost(card.mana_cost)} ${esc(store.cardType(card))} · ${esc(card.set_name)} #${esc(card.collector_number)}</div>
             <div class="tags">
               ${deckTag(entry?.deck_id ?? r.deckId)}
@@ -537,6 +541,7 @@ function renderDetail() {
     <div class="detail">
       <img class="detail-img" src="${esc(card.image_normal ?? card.image_small)}" alt="${esc(card.name)}">
       <div class="detail-info">
+        ${printedAs(card)}
         <div class="mana-row">${manaCost(card.mana_cost) || '<span class="muted">No mana cost</span>'}</div>
         <div class="detail-type">${esc(card.type_line)}</div>
         <div class="meta">${esc(card.set_name)}</div>
@@ -818,7 +823,7 @@ function renderCollection() {
   $("#total-value").textContent = money(totalValue);
 
   const q = $("#search").value.trim().toLowerCase();
-  const matches = q ? rows.filter((r) => `${r.card.name} ${r.card.set_name} ${r.card.type_line}`.toLowerCase().includes(q)) : rows;
+  const matches = q ? rows.filter((r) => `${r.card.name} ${r.card.flavor_name ?? ""} ${r.card.set_name} ${r.card.type_line}`.toLowerCase().includes(q)) : rows;
   // The commander stays pinned to the top of its deck whatever the sort.
   const sorted = sortBy(matches, $("#sort").value, { price: (r) => r.unitPrice, name: (r) => r.card.name, added: (r) => r.addedAt });
   const shown = [...sorted.filter((r) => r.commander), ...sorted.filter((r) => !r.commander)];
@@ -831,6 +836,7 @@ function renderCollection() {
         <img src="${esc(r.card.image_small)}" alt="" loading="lazy">
         <div class="info">
           <div class="name"><span class="qty">${r.entryIds.length}×</span>${esc(r.card.name)}</div>
+          ${printedAs(r.card)}
           <div class="meta">${manaCost(r.card.mana_cost)} ${esc(r.card.type_line)}</div>
           <div class="meta">${esc(r.card.set_name)} #${esc(r.card.collector_number)} · ${esc(r.card.rarity)}</div>
           <div class="tags">

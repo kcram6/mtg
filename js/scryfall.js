@@ -39,6 +39,7 @@ export function toCardRecord(c) {
     collector_number: c.collector_number,
     rarity: c.rarity,
     type_line: c.type_line,
+    flavor_name: c.flavor_name ?? c.card_faces?.[0]?.flavor_name ?? null, // name printed on special versions, e.g. Secret Lair
     mana_cost: c.mana_cost ?? c.card_faces?.[0]?.mana_cost ?? "",
     cmc: c.cmc ?? c.card_faces?.[0]?.cmc ?? 0, // mana value, for the mana curve
     card_type: mainType(c.type_line),
@@ -203,6 +204,38 @@ export function copyLimits() {
   return limitsPromise;
 }
 export const copyLimitsIfLoaded = () => limitsLoaded ?? new Map();
+
+// Special printings (Secret Lair, Universes Beyond "within" versions...) that
+// print a different name on the card, e.g. "Pelican Town" is Homeward Path
+// (SLD #2811). Printed name -> that printing's Scryfall id. Cached for a week.
+const FLAVOR_KEY = "mtg-flavor-names";
+let flavorPromise = null;
+export function flavorNames() {
+  flavorPromise ??= (async () => {
+    try {
+      const cached = JSON.parse(localStorage.getItem(FLAVOR_KEY));
+      if (cached && Date.now() - cached.at < 7 * 864e5) return cached.names;
+    } catch {}
+    const names = [];
+    let path = `/cards/search?q=${encodeURIComponent("has:flavorname game:paper -t:token")}&unique=prints`;
+    while (path) {
+      const res = await scryfall(path);
+      for (const c of res?.data ?? []) {
+        const flavor = c.flavor_name ?? c.card_faces?.[0]?.flavor_name;
+        if (flavor) names.push([flavor, c.id]);
+      }
+      path = res?.has_more ? res.next_page.replace(BASE, "") : null;
+    }
+    try {
+      localStorage.setItem(FLAVOR_KEY, JSON.stringify({ at: Date.now(), names }));
+    } catch {}
+    return names;
+  })();
+  flavorPromise.catch(() => (flavorPromise = null));
+  return flavorPromise;
+}
+
+export const byId = (id) => scryfall(`/cards/${encodeURIComponent(id)}`);
 
 // Name suggestions while typing, tokens included.
 export async function autocomplete(query) {

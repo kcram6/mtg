@@ -35,7 +35,11 @@ function similarity(a, b) {
 let nameIndex = null;
 async function getNameIndex() {
   if (!nameIndex) {
-    const [names, tokens] = await Promise.all([scryfall.cardNames(), scryfall.tokenNames().catch(() => [])]);
+    const [names, tokens, flavors] = await Promise.all([
+      scryfall.cardNames(),
+      scryfall.tokenNames().catch(() => []),
+      scryfall.flavorNames().catch(() => []),
+    ]);
     const cardKeys = new Set();
     nameIndex = names.map((name) => {
       const key = normalize(name.split(" // ")[0]);
@@ -46,9 +50,24 @@ async function getNameIndex() {
       const key = normalize(name.split(" // ")[0]);
       if (!cardKeys.has(key)) nameIndex.push({ name, key, isToken: true });
     }
+    // Alternate printed names point straight at one printing.
+    for (const [flavor, printingId] of flavors) {
+      const key = normalize(flavor);
+      if (!cardKeys.has(key)) nameIndex.push({ name: flavor, key, isToken: false, printingId });
+    }
   }
   return nameIndex;
 }
+
+// Printed name -> printing id, for names read by Claude.
+async function flavorPrinting(name) {
+  const key = normalize(name);
+  const hit = (await scryfall.flavorNames().catch(() => [])).find(([flavor]) => normalize(flavor) === key);
+  return hit?.[1] ?? null;
+}
+
+// Names a printing can show: its real name, and any alternate printed name.
+const namesOf = (card) => [scryfall.frontName(card), card.flavor_name ?? card.card_faces?.[0]?.flavor_name].filter(Boolean);
 
 function bestNameMatch(index, guess) {
   const g = normalize(guess);
@@ -59,7 +78,7 @@ function bestNameMatch(index, guess) {
     if (score > bestScore) [best, bestScore] = [entry, score];
   }
   const needed = g.length <= 6 ? 0.85 : 0.75; // short names need a closer match
-  return bestScore >= needed ? { name: best.name, isToken: best.isToken, score: bestScore } : null;
+  return bestScore >= needed ? { name: best.name, isToken: best.isToken, printingId: best.printingId, score: bestScore } : null;
 }
 
 // OCR picks up stray marks from mana symbols and the frame, e.g. "(Sol Ring ge i".
@@ -89,31 +108,58 @@ async function identifyNameWithOcr(cardCanvas) {
       nameCandidates(line).forEach((guess, dropped) => {
         const match = bestNameMatch(index, guess);
         if (match) match.score *= 1 - 0.1 * dropped;
-        if (match && (!best || match.score > best.score)) best = match;
+        if (match && isBetter(match, best)) best = match;
       });
     }
-    if (best?.score >= 0.9) break; // confident; skip the other offsets
+    // Confident; skip the other offsets. Short names ("Egg", "Elf") are easy to
+    // hit by accident in border noise, so keep looking after those.
+    if (best?.score >= 0.9 && best.name.length >= 6) break;
   }
-  return best; // { name, score } or null
+  return best; // { name, score, isToken, printingId } or null
+}
+
+// Higher score wins; near-ties go to the longer name, since matching
+// "Delver of Secrets" is far stronger evidence than matching three letters.
+function isBetter(match, best) {
+  if (!best) return true;
+  if (Math.abs(match.score - best.score) <= 0.03) return match.name.length > best.name.length;
+  return match.score > best.score;
+}
+
+// Two crops of the bottom info line: the full width, then a tighter, sharper
+// crop of the left corner where the set code and number sit (reads small
+// digits better, e.g. on borderless Secret Lair cards).
+const BOTTOM_LEFT = { x0: 0.02, x1: 0.6, y0: 0.88, y1: 1.0 };
+
+// Same length, one character different: "2007" vs "2807".
+const oneOff = (a, b) => a.length === b.length && [...a].filter((ch, i) => ch !== b[i]).length === 1;
+
+function scorePrintings(prints, text) {
+  const tokens = new Set(text.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean));
+  const numbers = [...tokens].filter((t) => /^\d+[A-Z]?$/.test(t)).map((t) => t.replace(/^0+(?=\d)/, ""));
+  let best = null, bestScore = 0, tie = false;
+  for (const p of prints) {
+    // Token sets are the main set's code with a "t" prefix (thob), but the card shows "HOB".
+    const printedSet = (p.set_type === "token" ? p.set.replace(/^t/, "") : p.set).toUpperCase();
+    const num = p.collector_number.toUpperCase();
+    const setHit = tokens.has(printedSet);
+    // A one-digit misread only counts alongside the right set code.
+    const numScore = numbers.includes(num) ? 2 : setHit && numbers.some((n) => oneOff(n, num)) ? 1 : 0;
+    const score = (setHit ? 2 : 0) + numScore;
+    if (score > bestScore) [best, bestScore, tie] = [p, score, false];
+    else if (score === bestScore && score > 0) tie = true;
+  }
+  return bestScore >= 2 && !tie ? best : null;
 }
 
 // Pick the printing whose set code and/or collector number appear in the
 // OCR'd bottom text. Returns null when it can't tell.
 async function identifyPrintingWithOcr(cardCanvas, prints) {
-  const { text } = await readText(cropForOcr(cardCanvas, BOTTOM_INFO, 120), "block");
-  const tokens = new Set(text.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean));
-  const numbers = new Set([...tokens].filter((t) => /^\d+[A-Z]?$/.test(t)).map((t) => t.replace(/^0+(?=\d)/, "")));
-
-  let best = null, bestScore = 0, tie = false;
-  for (const p of prints) {
-    // Token sets are the main set's code with a "t" prefix (thob), but the card shows "HOB".
-    const printedSet = (p.set_type === "token" ? p.set.replace(/^t/, "") : p.set).toUpperCase();
-    const score =
-      (tokens.has(printedSet) ? 2 : 0) + (numbers.has(p.collector_number.toUpperCase()) ? 2 : 0);
-    if (score > bestScore) [best, bestScore, tie] = [p, score, false];
-    else if (score === bestScore && score > 0) tie = true;
-  }
-  return bestScore >= 2 && !tie ? best : null;
+  const wide = (await readText(cropForOcr(cardCanvas, BOTTOM_INFO, 120), "block")).text;
+  const found = scorePrintings(prints, wide);
+  if (found) return found;
+  const corner = (await readText(cropForOcr(cardCanvas, BOTTOM_LEFT, 160), "block")).text;
+  return scorePrintings(prints, `${wide}\n${corner}`);
 }
 
 // When the printing can't be read, guess the newest regular printing rather
@@ -136,7 +182,13 @@ async function identifyWithAI(apiKey, cardCanvas) {
   if (is_token) return identifyTokenWithAI(name, set, num);
   if (set && num) {
     const card = await scryfall.bySetAndNumber(set, num);
-    if (card && similarity(normalize(name), normalize(scryfall.frontName(card))) >= 0.75) return { card, exact: true };
+    if (card && namesOf(card).some((n) => similarity(normalize(name), normalize(n)) >= 0.75)) return { card, exact: true };
+  }
+  // An alternate printed name (e.g. Secret Lair) identifies the exact printing.
+  const printingId = await flavorPrinting(name);
+  if (printingId) {
+    const card = await scryfall.byId(printingId);
+    if (card) return { card, exact: true };
   }
   const card = (set && (await scryfall.fuzzyNamed(name, set))) || (await scryfall.fuzzyNamed(name));
   return card ? { card, exact: false } : null;
@@ -176,7 +228,14 @@ export async function recognizeCard(cardCanvas, { mode, apiKey, allowAI = true, 
   let ocrResult = null;
   if (mode !== "ai" || !canUseAI) {
     const match = await identifyNameWithOcr(cardCanvas);
-    if (match) {
+    if (match?.printingId) {
+      // Same trust rule as below: a shaky read waits for Claude when it can.
+      if (match.score >= 0.9 || (!canUseAI && !deferUncertain)) {
+        const card = await scryfall.byId(match.printingId);
+        if (card) return { status: "found", card, exact: true, via: "ocr", aiUsed: false };
+      } else if (!canUseAI) return { status: "not-found", aiUsed: false };
+    }
+    if (match && !match.printingId) {
       const prints = await scryfall.printings(match.name, { token: match.isToken });
       if (prints.length) {
         const printing = await identifyPrintingWithOcr(cardCanvas, prints);
