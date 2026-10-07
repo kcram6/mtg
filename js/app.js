@@ -572,6 +572,31 @@ async function pickPrinting(name, onPick) {
   };
 }
 
+// ---------- Sorting ----------
+// Price sorts put cards with no price last, whichever direction.
+function sortBy(list, mode, { price, name, added }) {
+  const byName = (a, b) => name(a).localeCompare(name(b));
+  const byPrice = (dir) => (a, b) => {
+    const pa = price(a), pb = price(b);
+    if (pa == null || pb == null) return (pa == null) - (pb == null) || byName(a, b);
+    return dir * (pa - pb) || byName(a, b);
+  };
+  const cmp = {
+    "price-desc": byPrice(-1),
+    "price-asc": byPrice(1),
+    newest: (a, b) => (added(b) ?? "").localeCompare(added(a) ?? "") || byName(a, b),
+    name: byName,
+  }[mode];
+  return cmp ? [...list].sort(cmp) : list;
+}
+
+const savedSort = (key, fallback) => {
+  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
+};
+const saveSort = (key, value) => {
+  try { localStorage.setItem(key, value); } catch {}
+};
+
 // ---------- Collection ----------
 let place = "all"; // "all", "extras", or a deck id
 let typeFilter = "all";
@@ -725,7 +750,10 @@ function renderCollection() {
   $("#total-value").textContent = money(totalValue);
 
   const q = $("#search").value.trim().toLowerCase();
-  const shown = q ? rows.filter((r) => `${r.card.name} ${r.card.set_name} ${r.card.type_line}`.toLowerCase().includes(q)) : rows;
+  const matches = q ? rows.filter((r) => `${r.card.name} ${r.card.set_name} ${r.card.type_line}`.toLowerCase().includes(q)) : rows;
+  // The commander stays pinned to the top of its deck whatever the sort.
+  const sorted = sortBy(matches, $("#sort").value, { price: (r) => r.unitPrice, name: (r) => r.card.name, added: (r) => r.addedAt });
+  const shown = [...sorted.filter((r) => r.commander), ...sorted.filter((r) => !r.commander)];
 
   $("#collection").innerHTML = shown.length
     ? shown
@@ -798,6 +826,11 @@ $("#delete-deck").addEventListener("click", () => {
 });
 
 $("#search").addEventListener("input", renderCollection);
+$("#sort").value = savedSort("mtg-sort", "name");
+$("#sort").addEventListener("change", (e) => {
+  saveSort("mtg-sort", e.target.value);
+  renderCollection();
+});
 
 $("#refresh-prices").addEventListener("click", async (e) => {
   const btn = e.currentTarget;
@@ -818,7 +851,7 @@ $("#refresh-prices").addEventListener("click", async (e) => {
 // ---------- Decks tab ----------
 let openDeckId = null;
 let deckTab = "upgrades";
-const recState = { filter: "top", ownedOnly: false, shown: 25 };
+const recState = { filter: "top", ownedOnly: false, shown: 25, sort: savedSort("mtg-rec-sort", "best") };
 const recDetails = new Map(); // Scryfall id -> full Scryfall card (image, price) for recommendations
 
 const sortedIdentity = (deckId) => [...(store.commanderIdentity(deckId) ?? [])].sort((a, b) => WUBRG.indexOf(a) - WUBRG.indexOf(b));
@@ -867,7 +900,7 @@ $("#deck-back").addEventListener("click", showDeckList);
 function openDeck(deckId) {
   openDeckId = deckId;
   deckTab = "upgrades";
-  Object.assign(recState, { filter: "top", ownedOnly: false, shown: 25 });
+  Object.assign(recState, { filter: "top", ownedOnly: false, shown: 25 }); // sort choice is kept
   $("#decks-list").hidden = true;
   $("#deck-page").hidden = false;
   $("main").scrollTop = 0;
@@ -964,21 +997,35 @@ async function renderUpgrades(deck) {
   if (recState.filter === "top") list.sort((a, b) => b.inclusion + b.synergy - (a.inclusion + a.synergy));
   else list = list.filter((c) => c.category === recState.filter).sort((a, b) => b.inclusion - a.inclusion);
   if (recState.ownedOnly) list = list.filter((c) => ownedSummary(c.name, deck.id));
-  const shown = list.slice(0, recState.shown);
 
-  // Images and prices come from Scryfall, 75 cards per request.
-  const missing = shown.map((c) => c.id).filter((id) => id && !recDetails.has(id));
+  // Images and prices come from Scryfall, 75 cards per request. Sorting by
+  // price needs every suggestion's price, not just the visible ones.
+  const priceSort = recState.sort.startsWith("price");
+  const needed = priceSort ? list : list.slice(0, recState.shown);
+  const missing = needed.map((c) => c.id).filter((id) => id && !recDetails.has(id));
+  if (missing.length > 75) el.innerHTML = `<div class="loading">${icon("loader", "spin")}Loading prices…</div>`;
   if (missing.length) {
     el.querySelector(".rec-list")?.classList.add("loading-more");
     const cards = await scryfall.fetchMany(missing).catch(() => []);
     cards.forEach((c) => recDetails.set(c.id, c));
     if (openDeckId !== deck.id || deckTab !== "upgrades") return;
   }
+  const recPrice = (c) => {
+    const sc = recDetails.get(c.id);
+    return sc ? store.unitPrice(scryfall.toCardRecord(sc), false) : null;
+  };
+  if (priceSort) list = sortBy(list, recState.sort, { price: recPrice, name: (c) => c.name, added: () => null });
+  const shown = list.slice(0, recState.shown);
 
   const chips = [["top", "Top picks"], ...recs.categories.map((c) => [c, c])];
   el.innerHTML = `
     <div class="chips rec-chips">${chips.map(([id, label]) => `<button class="chip small ${recState.filter === id ? "active" : ""}" data-filter="${esc(id)}">${esc(label)}</button>`).join("")}</div>
-    <div class="toolbar"><label class="switch"><input type="checkbox" id="owned-only" ${recState.ownedOnly ? "checked" : ""}><span class="track"></span>Only cards I own</label></div>
+    <div class="toolbar">
+      <label class="switch"><input type="checkbox" id="owned-only" ${recState.ownedOnly ? "checked" : ""}><span class="track"></span>Only cards I own</label>
+      <select id="rec-sort" class="sort" aria-label="Sort suggestions">
+        ${[["best", "Best match"], ["price-desc", "$ High–Low"], ["price-asc", "$ Low–High"]].map(([v, l]) => `<option value="${v}" ${recState.sort === v ? "selected" : ""}>${l}</option>`).join("")}
+      </select>
+    </div>
     <ul class="card-list rec-list">
       ${
         shown.length
@@ -1045,17 +1092,24 @@ $("#deck-upgrades").addEventListener("click", (e) => {
   renderDeckPage();
 });
 $("#deck-upgrades").addEventListener("change", (e) => {
-  if (e.target.id !== "owned-only") return;
-  Object.assign(recState, { ownedOnly: e.target.checked, shown: 25 });
+  if (e.target.id === "owned-only") Object.assign(recState, { ownedOnly: e.target.checked, shown: 25 });
+  else if (e.target.id === "rec-sort") {
+    Object.assign(recState, { sort: e.target.value, shown: 25 });
+    saveSort("mtg-rec-sort", e.target.value);
+  } else return;
   renderDeckPage();
 });
 
 function renderWishlist(deck) {
-  const items = store.getWishlist(deck.id);
+  const wishSort = savedSort("mtg-wish-sort", "newest");
+  const items = sortBy(store.getWishlist(deck.id), wishSort, { price: (w) => store.unitPrice(w, false), name: (w) => w.name, added: (w) => w.added_at });
   const total = items.reduce((sum, w) => sum + (Number(w.price_usd) || 0), 0);
   $("#deck-wishlist").innerHTML = `
     <div class="wish-head">
       <div class="total"><strong>${money(total)}</strong>${items.length} card${items.length === 1 ? "" : "s"} to get</div>
+      <select id="wish-sort" class="sort" aria-label="Sort wishlist">
+        ${[["newest", "Newest"], ["price-desc", "$ High–Low"], ["price-asc", "$ Low–High"], ["name", "A–Z"]].map(([v, l]) => `<option value="${v}" ${wishSort === v ? "selected" : ""}>${l}</option>`).join("")}
+      </select>
       <button class="btn primary" data-add-wish>${icon("plus")}Add card</button>
     </div>
     <ul class="card-list">
@@ -1085,6 +1139,12 @@ function renderWishlist(deck) {
     </ul>
     ${items.length ? `<p class="attribution">Cards leave the wishlist automatically when you scan or move a copy into this deck.</p>` : ""}`;
 }
+
+$("#deck-wishlist").addEventListener("change", (e) => {
+  if (e.target.id !== "wish-sort") return;
+  saveSort("mtg-wish-sort", e.target.value);
+  renderDeckPage();
+});
 
 $("#deck-wishlist").addEventListener("click", (e) => {
   const deckId = openDeckId;

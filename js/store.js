@@ -228,7 +228,9 @@ export function getCollection(place = "all", type = "all") {
       const offIdentity = t !== "Token" && outsideIdentity(card, identities.get(deckId));
       groups.set(key, { card, foil: e.foil, deckId, commander, offIdentity, entryIds: [], unitPrice: unitPrice(card, e.foil) });
     }
-    groups.get(key).entryIds.push(e.id);
+    const group = groups.get(key);
+    group.entryIds.push(e.id);
+    if (!group.addedAt || e.added_at > group.addedAt) group.addedAt = e.added_at;
   }
   const rows = [...groups.values()].sort((a, b) => b.commander - a.commander || a.card.name.localeCompare(b.card.name));
   const totalCards = rows.reduce((n, r) => n + r.entryIds.length, 0);

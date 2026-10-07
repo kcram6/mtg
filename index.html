@@ -120,6 +120,12 @@
       <div id="type-filter" class="chips"></div>
       <div class="toolbar">
         <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Search cards"></label>
+        <select id="sort" class="sort" aria-label="Sort cards">
+          <option value="name">A–Z</option>
+          <option value="price-desc">$ High–Low</option>
+          <option value="price-asc">$ Low–High</option>
+          <option value="newest">Newest</option>
+        </select>
         <button id="refresh-prices" class="btn icon-only" title="Refresh prices"><svg class="icon"><use href="#i-refresh"/></svg></button>
       </div>
       <ul id="collection" class="card-list"></ul>
