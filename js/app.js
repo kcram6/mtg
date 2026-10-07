@@ -7,6 +7,7 @@ import { warmUp as warmUpOcr } from "./ocr.js";
 import { resetClient } from "./ai.js";
 import * as edhrec from "./edhrec.js";
 import { estimateBracket, BRACKETS } from "./bracket.js";
+import { parseDecklist } from "./importer.js";
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -1019,7 +1020,7 @@ function renderDeckPage() {
   const cmdrs = store.getCommanders(deck.id);
   const lead = cmdrs[0]?.card;
   const wishlist = store.getWishlist(deck.id);
-  const wishCost = wishlist.reduce((sum, w) => sum + (Number(w.price_usd) || 0), 0);
+  const wishCost = wishlist.reduce((sum, w) => sum + (Number(w.price_usd) || 0) * (w.qty ?? 1), 0);
   $("#deck-hero").innerHTML = `
     ${lead ? `<div class="hero-art" ${artStyle(lead)}></div>` : ""}
     <div class="hero-body">
@@ -1077,6 +1078,153 @@ $("#deck-dupes").addEventListener("click", (e) => {
   const moved = store.moveDuplicatesToExtras(openDeckId, scryfall.copyLimitsIfLoaded());
   toast(`Moved ${moved} extra cop${moved === 1 ? "y" : "ies"} to Extras`);
   renderDeckPage();
+});
+
+// ---------- Decklist import ----------
+// Paste a list -> see what's already in the deck, what can move in from your
+// collection, and what to buy -> import: moves cards, sets the commander, and
+// puts the rest on the deck's wishlist (its buy list).
+const importDialog = $("#import-dialog");
+let importPlan = null;
+const isBasic = (card) => /\bBasic\b/.test(card.type_line ?? "");
+
+function openImport(deckId) {
+  $("#import-deck").innerHTML =
+    `<option value="new">New deck…</option>` +
+    store.getDecks().map((d) => `<option value="${d.id}" ${d.id === deckId ? "selected" : ""}>${esc(d.name)}</option>`).join("");
+  $("#import-name-row").hidden = $("#import-deck").value !== "new";
+  $("#import-msg").textContent = "";
+  $("#import-step1").hidden = false;
+  $("#import-step2").hidden = true;
+  importDialog.showModal();
+}
+$("#import-btn").addEventListener("click", () => openImport(null));
+$("#import-deck").addEventListener("change", (e) => ($("#import-name-row").hidden = e.target.value !== "new"));
+
+function buildImportPlan(lines, cards, deckId) {
+  const wanted = new Map();
+  const notFound = [];
+  lines.forEach((line, i) => {
+    const card = cards[i];
+    if (!card) return notFound.push(line);
+    const w = wanted.get(card.name) ?? { card, qty: 0, commander: false };
+    w.qty += line.qty;
+    w.commander ||= line.commander;
+    wanted.set(card.name, w);
+  });
+  const plan = { deckId, alreadyIn: [], fromExtras: [], fromOtherDecks: [], toBuy: [], basics: [], notFound, commanders: [] };
+  for (const w of wanted.values()) {
+    const copies = store.ownedCopies(w.card.name);
+    let need = w.qty;
+    const inDeck = deckId ? copies.filter((e) => e.deck_id === deckId).length : 0;
+    if (inDeck) plan.alreadyIn.push({ ...w, n: Math.min(need, inDeck) });
+    need -= Math.min(need, inDeck);
+    const extras = copies.filter((e) => !store.getDeck(e.deck_id)).slice(0, need);
+    if (extras.length) plan.fromExtras.push({ ...w, n: extras.length, entryIds: extras.map((e) => e.id) });
+    need -= extras.length;
+    const others = copies.filter((e) => store.getDeck(e.deck_id) && e.deck_id !== deckId).slice(0, need);
+    if (others.length) plan.fromOtherDecks.push({ ...w, n: others.length, entryIds: others.map((e) => e.id), from: [...new Set(others.map((e) => deckLabel(e.deck_id)))] });
+    if (need > 0) {
+      const item = { ...w, n: need, nIfMoving: need - others.length };
+      (isBasic(w.card) ? plan.basics : plan.toBuy).push(item);
+    }
+    if (w.commander) plan.commanders.push(w.card.name);
+  }
+  return plan;
+}
+
+$("#import-check").addEventListener("click", async () => {
+  const { cards: lines, skipped } = parseDecklist($("#import-text").value);
+  if (!lines.length) return ($("#import-msg").textContent = "No cards found. Use one card per line, like “1 Sol Ring”.");
+  const btn = $("#import-check");
+  btn.disabled = true;
+  btn.innerHTML = `${icon("loader", "spin")}Looking up ${lines.length} cards…`;
+  try {
+    const cards = await scryfall.resolveCards(lines);
+    const target = $("#import-deck").value;
+    importPlan = buildImportPlan(lines, cards, target === "new" ? null : target);
+    importPlan.target = target;
+    importPlan.skipped = skipped;
+    renderImportPlan();
+  } catch (err) {
+    $("#import-msg").textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Check against my collection";
+  }
+});
+
+function renderImportPlan() {
+  const p = importPlan;
+  const moveOthers = $("#import-move-others")?.checked ?? false;
+  const count = (list, key = "n") => list.reduce((n, x) => n + x[key], 0);
+  const buyN = (b) => (moveOthers ? b.nIfMoving : b.n);
+  const toBuy = p.toBuy.filter((b) => buyN(b) > 0);
+  const buyCost = toBuy.reduce((sum, b) => sum + (Number(b.card.prices?.usd ?? b.card.prices?.usd_foil) || 0) * buyN(b), 0);
+  const list = (items, right) => `<ul>${items.map((x) => `<li><span>${x.n > 1 ? `${x.n}× ` : ""}${esc(x.card.name)}</span>${right ? `<small>${right(x)}</small>` : ""}</li>`).join("")}</ul>`;
+  const group = (cls, iconName, title, n, body, open = false) =>
+    n ? `<details class="imp-group ${cls}" ${open ? "open" : ""}><summary>${icon(iconName)}${title}<span class="n">${n}</span></summary>${body}</details>` : "";
+  const deckName = p.target === "new" ? $("#import-name").value.trim() || p.commanders[0] || "Imported deck" : deckLabel(p.target);
+
+  $("#import-step1").hidden = true;
+  $("#import-step2").hidden = false;
+  $("#import-step2").innerHTML = `
+    <div class="import-summary">
+      <p class="muted" style="margin:0">Into <strong>${esc(deckName)}</strong>${p.commanders.length ? ` · commander ${esc(p.commanders.join(" & "))}` : ""}</p>
+      ${group("ok", "check", "Already in the deck", count(p.alreadyIn), list(p.alreadyIn))}
+      ${group("move", "inbox", "Move in from Extras", count(p.fromExtras), list(p.fromExtras), true)}
+      ${group("other", "swords", "In your other decks", count(p.fromOtherDecks), list(p.fromOtherDecks, (x) => esc(x.from.join(", "))))}
+      ${group("buy", "bookmark", `To buy · ${money(buyCost)}`, count(toBuy.map((b) => ({ n: buyN(b) }))), list(toBuy.map((b) => ({ ...b, n: buyN(b) })), (x) => money(Number(x.card.prices?.usd ?? x.card.prices?.usd_foil) || null)), true)}
+      ${(() => {
+        const n = p.basics.reduce((sum, b) => sum + buyN(b), 0);
+        return n ? `<p class="muted" style="margin:0">You're short ${n} basic land${n === 1 ? "" : "s"}; basics aren't added to the buy list.</p>` : "";
+      })()}
+      ${p.notFound.length ? `<details class="imp-group buy" open><summary>${icon("alert")}Couldn't find these cards<span class="n">${p.notFound.length}</span></summary><ul>${p.notFound.map((l) => `<li>${esc(l.name)}</li>`).join("")}</ul></details>` : ""}
+      ${p.skipped.length ? `<details class="imp-group buy" open><summary>${icon("alert")}Couldn't read these lines<span class="n">${p.skipped.length}</span></summary><ul>${p.skipped.map((l) => `<li>${esc(l)}</li>`).join("")}</ul></details>` : ""}
+    </div>
+    ${count(p.fromOtherDecks) ? `<label class="switch" style="margin-top:12px"><input type="checkbox" id="import-move-others" ${moveOthers ? "checked" : ""}><span class="track"></span>Also move cards from my other decks</label>` : ""}
+    <div class="import-actions">
+      <button class="btn" data-import-back>${icon("back")}Back</button>
+      <button class="btn primary" data-import-go>${icon("download")}Import</button>
+    </div>`;
+}
+
+$("#import-step2").addEventListener("change", (e) => e.target.id === "import-move-others" && renderImportPlan());
+$("#import-step2").addEventListener("click", (e) => {
+  if (e.target.closest("[data-import-back]")) {
+    $("#import-step2").hidden = true;
+    $("#import-step1").hidden = false;
+    return;
+  }
+  if (!e.target.closest("[data-import-go]")) return;
+  const p = importPlan;
+  const moveOthers = $("#import-move-others")?.checked ?? false;
+  const deckId = p.target === "new" ? store.createDeck($("#import-name").value.trim() || p.commanders[0] || "Imported deck").id : p.target;
+
+  const moveIds = [...p.fromExtras.flatMap((x) => x.entryIds), ...(moveOthers ? p.fromOtherDecks.flatMap((x) => x.entryIds) : [])];
+  if (moveIds.length) store.moveCopies(moveIds, deckId);
+  let wished = 0;
+  for (const b of p.toBuy) {
+    const n = moveOthers ? b.nIfMoving : b.n;
+    if (n > 0) {
+      store.addToWishlist(deckId, b.card, n);
+      wished += n;
+    }
+  }
+  // Mark the commander if a copy is now in the deck.
+  for (const name of p.commanders) {
+    const copy = store.ownedCopies(name).find((e) => e.deck_id === deckId);
+    if (copy && !store.isCommander(copy)) store.setCommander(deckId, copy.id, true);
+  }
+  importDialog.close();
+  $("#import-text").value = "";
+  toast(`Moved ${moveIds.length} card${moveIds.length === 1 ? "" : "s"} in · ${wished} on the buy list`, "check", 4500);
+  showView("decks");
+  openDeck(deckId);
+  if (wished) {
+    deckTab = "wishlist";
+    renderDeckPage();
+  }
 });
 
 // ---------- Card preview (cards you don't own yet) ----------
@@ -1474,15 +1622,25 @@ $("#deck-upgrades").addEventListener("change", (e) => {
 function renderWishlist(deck) {
   const wishSort = savedSort("mtg-wish-sort", "newest");
   const items = sortBy(store.getWishlist(deck.id), wishSort, { price: (w) => store.unitPrice(w, false), name: (w) => w.name, added: (w) => w.added_at });
-  const total = items.reduce((sum, w) => sum + (Number(w.price_usd) || 0), 0);
+  const qtyOf = (w) => w.qty ?? 1;
+  const total = items.reduce((sum, w) => sum + (Number(w.price_usd) || 0) * qtyOf(w), 0);
+  const cardCount = items.reduce((n, w) => n + qtyOf(w), 0);
   $("#deck-wishlist").innerHTML = `
     <div class="wish-head">
-      <div class="total"><strong>${money(total)}</strong>${items.length} card${items.length === 1 ? "" : "s"} to get</div>
+      <div class="total"><strong>${money(total)}</strong>${cardCount} card${cardCount === 1 ? "" : "s"} to get</div>
       <select id="wish-sort" class="sort" aria-label="Sort wishlist">
         ${[["newest", "Newest"], ["price-desc", "$ High–Low"], ["price-asc", "$ Low–High"], ["name", "A–Z"]].map(([v, l]) => `<option value="${v}" ${wishSort === v ? "selected" : ""}>${l}</option>`).join("")}
       </select>
       <button class="btn primary" data-add-wish>${icon("plus")}Add card</button>
     </div>
+    ${
+      items.length
+        ? `<div class="wish-actions">
+            <a class="btn" href="${esc(tcgplayerMassEntry(items))}" target="_blank" rel="noopener">${icon("external")}Buy all on TCGplayer</a>
+            <button class="btn" data-copy-list>${icon("download")}Copy list</button>
+          </div>`
+        : ""
+    }
     <ul class="card-list">
       ${
         items.length
@@ -1492,11 +1650,11 @@ function renderWishlist(deck) {
                 return `<li data-name="${esc(w.name)}" data-id="${esc(w.scryfall_id)}" class="tappable">
                   <img src="${esc(w.image_small)}" alt="" loading="lazy">
                   <div class="info">
-                    <div class="name">${esc(w.name)}</div>
+                    <div class="name">${qtyOf(w) > 1 ? `<span class="qty">${qtyOf(w)}×</span>` : ""}${esc(w.name)}</div>
                     <div class="meta">${manaCost(w.mana_cost)} ${esc(w.type_line)}</div>
                     <div class="tags">${owned ? `<span class="tag owned">${icon("check")}${esc(owned.label)}</span>` : ""}</div>
                   </div>
-                  <div class="price">${money(store.unitPrice(w, false))}</div>
+                  <div class="price">${money(store.unitPrice(w, false))}${qtyOf(w) > 1 ? `<small>${money((store.unitPrice(w, false) ?? 0) * qtyOf(w))}</small>` : ""}</div>
                   <div class="actions">
                     ${owned ? `<button class="btn sm primary" data-move-here>${icon("swords")}Move here</button>` : ""}
                     ${w.tcgplayer_url ? `<a class="btn sm" href="${esc(w.tcgplayer_url)}" target="_blank" rel="noopener">${icon("external")}TCGplayer</a>` : ""}
@@ -1517,8 +1675,22 @@ $("#deck-wishlist").addEventListener("change", (e) => {
   renderDeckPage();
 });
 
-$("#deck-wishlist").addEventListener("click", (e) => {
+// TCGplayer's Mass Entry page takes a list like "2 Sol Ring||1 Command Tower".
+const decklistText = (items, sep) => items.map((w) => `${w.qty ?? 1} ${w.name.split(" // ")[0]}`).join(sep);
+const tcgplayerMassEntry = (items) => `https://www.tcgplayer.com/massentry?productline=Magic&c=${encodeURIComponent(decklistText(items, "||"))}`;
+
+$("#deck-wishlist").addEventListener("click", async (e) => {
   const deckId = openDeckId;
+  if (e.target.closest("[data-copy-list]")) {
+    const text = decklistText(store.getWishlist(deckId), "\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("Buy list copied");
+    } catch {
+      prompt("Copy your buy list:", text);
+    }
+    return;
+  }
   if (e.target.closest("[data-add-wish]")) {
     return openSearch({
       title: "Add to wishlist",

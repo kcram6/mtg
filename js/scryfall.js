@@ -261,6 +261,26 @@ export async function printings(name, { token = false } = {}) {
   return prints.length || token ? prints : printings(name, { token: true });
 }
 
+// Look up decklist lines: by set + collector number when given, else by name
+// (75 per request). Returns one card (or null) per input line, in order.
+export async function resolveCards(lines) {
+  const cards = lines.map(() => null);
+  const lower = (s) => s.toLowerCase();
+  const frontOf = (s) => lower(s.split(" // ")[0]);
+  const lookup = async (indexes, toIdentifier, matches) => {
+    for (let i = 0; i < indexes.length; i += 75) {
+      const chunk = indexes.slice(i, i + 75);
+      const res = await scryfall("/cards/collection", { method: "POST", body: JSON.stringify({ identifiers: chunk.map((j) => toIdentifier(lines[j])) }) });
+      for (const j of chunk) cards[j] = (res?.data ?? []).find((c) => matches(c, lines[j])) ?? null;
+    }
+  };
+  const withPrinting = lines.map((l, j) => (l.set && l.number ? j : -1)).filter((j) => j >= 0);
+  await lookup(withPrinting, (l) => ({ set: l.set, collector_number: l.number }), (c, l) => c.set === l.set && c.collector_number === l.number);
+  const byName = lines.map((l, j) => (cards[j] ? -1 : j)).filter((j) => j >= 0);
+  await lookup(byName, (l) => ({ name: l.name.split(" // ")[0] }), (c, l) => frontOf(c.name) === frontOf(l.name));
+  return cards;
+}
+
 // Fresh data for many cards at once (Scryfall allows 75 per request).
 export async function fetchMany(scryfallIds) {
   const results = [];

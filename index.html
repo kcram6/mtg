@@ -138,7 +138,10 @@
       <div id="decks-list">
         <div class="page-head">
           <h1>Decks</h1>
-          <button id="new-deck-btn" class="btn sm"><svg class="icon"><use href="#i-plus"/></svg>New deck</button>
+          <div class="head-actions">
+            <button id="import-btn" class="btn sm"><svg class="icon"><use href="#i-download"/></svg>Import list</button>
+            <button id="new-deck-btn" class="btn sm"><svg class="icon"><use href="#i-plus"/></svg>New deck</button>
+          </div>
         </div>
         <div id="deck-grid" class="deck-grid"></div>
       </div>
@@ -254,6 +257,25 @@
       </label>
       <button class="btn primary big full">Save game</button>
     </form>
+  </dialog>
+
+  <dialog id="import-dialog" class="sheet">
+    <header>
+      <h2>Import decklist</h2>
+      <button class="btn icon-only ghost" data-close aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+    </header>
+    <div class="import-body">
+      <div id="import-step1" class="game-form">
+        <label>Paste a decklist <small>From Moxfield, Archidekt, MTGO… one card per line, like “1 Sol Ring”. Mark the commander with *CMDR* or put it under a “Commander” heading.</small>
+          <textarea id="import-text" rows="9" placeholder="Commander&#10;1 Atraxa, Praetors' Voice&#10;&#10;Deck&#10;1 Sol Ring&#10;1 Command Tower"></textarea>
+        </label>
+        <label>Into deck <select id="import-deck"></select></label>
+        <label id="import-name-row">New deck name <input id="import-name" placeholder="Defaults to the commander's name" autocomplete="off"></label>
+        <p id="import-msg" class="muted"></p>
+        <button type="button" id="import-check" class="btn primary big full">Check against my collection</button>
+      </div>
+      <div id="import-step2" hidden></div>
+    </div>
   </dialog>
 
   <dialog id="search-dialog" class="sheet">

@@ -155,9 +155,9 @@ const sameName = (a, b) => a.split(" // ")[0].toLowerCase() === b.split(" // ")[
 export const getWishlist = (deckId) => getDeck(deckId)?.wishlist ?? [];
 export const onWishlist = (deckId, name) => getWishlist(deckId).some((w) => sameName(w.name, name));
 
-export function addToWishlist(deckId, scryfallCard) {
+export function addToWishlist(deckId, scryfallCard, qty = 1) {
   const deck = getDeck(deckId);
-  const item = { ...toCardRecord(scryfallCard), added_at: now() };
+  const item = { ...toCardRecord(scryfallCard), qty, added_at: now() };
   deck.wishlist = getWishlist(deckId).filter((w) => !sameName(w.name, item.name)).concat(item);
   deck.updated_at = now();
   save();
@@ -170,10 +170,13 @@ export function removeFromWishlist(deckId, name) {
   save();
 }
 
+// Getting a copy into the deck crosses one off (an item wanted 3× drops to 2×).
 function fulfillWishlist(deckId, name) {
   const deck = getDeck(deckId);
-  if (!deck?.wishlist?.some((w) => sameName(w.name, name))) return;
-  deck.wishlist = deck.wishlist.filter((w) => !sameName(w.name, name));
+  const item = deck?.wishlist?.find((w) => sameName(w.name, name));
+  if (!item) return;
+  item.qty = (item.qty ?? 1) - 1;
+  if (item.qty <= 0) deck.wishlist = deck.wishlist.filter((w) => w !== item);
   deck.updated_at = now();
 }
 
