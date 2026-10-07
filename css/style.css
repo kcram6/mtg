@@ -177,6 +177,11 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px v
 #start-camera { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
 #start-camera:active { transform: translate(-50%, -50%) scale(0.97); }
 
+.manual-add { width: 100%; margin-top: 2px; background: transparent; border-style: dashed; color: var(--muted); font-weight: 500; }
+.search-body { padding: 14px 16px 18px; min-height: 50vh; }
+.search-body #manual-dest { font-size: 13px; margin: 10px 2px 4px; }
+.search-body .options { padding: 4px 0 0; }
+
 /* ---------- Card lists ---------- */
 .section-head { display: flex; align-items: baseline; gap: 8px; margin: 22px 0 10px; }
 .count { font-size: 12px; color: var(--accent); font-weight: 600; }

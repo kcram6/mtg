@@ -77,6 +77,8 @@
         <button id="scan-now" class="btn primary"><svg class="icon"><use href="#i-scan"/></svg>Scan now</button>
       </div>
 
+      <button id="manual-add" class="btn manual-add"><svg class="icon"><use href="#i-search"/></svg>Can't scan it? Search by name</button>
+
       <div class="section-head"><h2>Just scanned</h2><span id="session-count" class="count"></span></div>
       <ul id="recent" class="card-list"></ul>
     </section>
@@ -159,6 +161,18 @@
       <input id="new-deck-name" placeholder="New deck name, e.g. Atraxa Superfriends" autocomplete="off" required>
       <button class="btn primary"><svg class="icon"><use href="#i-plus"/></svg>Create</button>
     </form>
+  </dialog>
+
+  <dialog id="search-dialog" class="sheet">
+    <header>
+      <h2>Add a card</h2>
+      <button class="btn icon-only ghost" data-close aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+    </header>
+    <div class="search-body">
+      <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="manual-q" type="search" placeholder="Card or token name" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <p id="manual-dest" class="muted"></p>
+      <ul id="manual-results" class="options"></ul>
+    </div>
   </dialog>
 
   <dialog id="card-dialog" class="sheet">

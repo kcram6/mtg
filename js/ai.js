@@ -21,8 +21,9 @@ const SCHEMA = {
     name: { type: ["string", "null"] },
     set_code: { type: ["string", "null"] },
     collector_number: { type: ["string", "null"] },
+    is_token: { type: "boolean" },
   },
-  required: ["card_found", "name", "set_code", "collector_number"],
+  required: ["card_found", "name", "set_code", "collector_number", "is_token"],
   additionalProperties: false,
 };
 
@@ -32,7 +33,8 @@ Report:
 - name: the card name exactly as printed in the title bar (for double-faced cards, the front face name).
 - set_code: the 3-5 character set code in the bottom-left corner (e.g. "C21", "MH3", "WOE"). Null if not printed or not legible.
 - collector_number: the collector number in the bottom-left, without the set total (e.g. "263/350" -> "263", "0042" -> "42"). Keep any letter suffix. Null if not legible.
-- card_found: false if no Magic card is clearly visible or the name is too blurry to read.
+- is_token: true if this is a token card (its type line starts with "Token", e.g. a Treasure, Food, or a 1/1 Goblin token), otherwise false. For tokens, set_code and collector_number are still the ones printed in the bottom-left.
+- card_found: false if no Magic card or token is clearly visible or the name is too blurry to read.
 
 Only report text you can actually read. Use null rather than guessing a set code or collector number.`;
 

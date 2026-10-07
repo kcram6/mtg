@@ -57,9 +57,10 @@ export function toCardRecord(c) {
 // The card's main type, for cataloging. Multi-type cards are filed under the
 // type that matters most in play: an Artifact Creature is a Creature, an
 // Artifact Land is a Land. Double-faced cards use their front face.
-export const CARD_TYPES = ["Creature", "Planeswalker", "Battle", "Instant", "Sorcery", "Artifact", "Enchantment", "Land"];
+export const CARD_TYPES = ["Creature", "Planeswalker", "Battle", "Instant", "Sorcery", "Artifact", "Enchantment", "Land", "Token"];
 export function mainType(typeLine = "") {
   const front = typeLine.split(" // ")[0].split(" — ")[0];
+  if (/\bToken\b/.test(front)) return "Token";
   if (/\bLand\b/.test(front)) return "Land";
   return CARD_TYPES.find((t) => new RegExp(`\\b${t}\\b`).test(front)) ?? "Other";
 }
@@ -92,15 +93,51 @@ export function cardNames() {
   return namesPromise;
 }
 
+// Token names (~800) aren't in the catalog above; fetch them separately and
+// cache them the same way.
+const TOKENS_KEY = "mtg-token-names";
+let tokenNamesPromise = null;
+export function tokenNames() {
+  tokenNamesPromise ??= (async () => {
+    try {
+      const cached = JSON.parse(localStorage.getItem(TOKENS_KEY));
+      if (cached && Date.now() - cached.at < 7 * 864e5) return cached.names;
+    } catch {}
+    const names = [];
+    let path = `/cards/search?q=${encodeURIComponent("t:token game:paper")}&unique=cards&include_extras=true`;
+    while (path) {
+      const res = await scryfall(path);
+      names.push(...(res?.data ?? []).map((c) => c.name));
+      path = res?.has_more ? res.next_page.replace(BASE, "") : null;
+    }
+    try {
+      localStorage.setItem(TOKENS_KEY, JSON.stringify({ at: Date.now(), names }));
+    } catch {}
+    return names;
+  })();
+  tokenNamesPromise.catch(() => (tokenNamesPromise = null));
+  return tokenNamesPromise;
+}
+
+// Name suggestions while typing, tokens included.
+export async function autocomplete(query) {
+  const res = await scryfall(`/cards/autocomplete?q=${encodeURIComponent(query)}&include_extras=true`);
+  return res?.data ?? [];
+}
+
 // All paper printings of a card, newest first (first page of up to 175 is plenty).
+// Tokens live in their own sets and are only returned when asked for, so a
+// name with no regular printings is retried as a token.
 const printsCache = new Map();
-export async function printings(name) {
-  if (!printsCache.has(name)) {
-    const q = `!"${name}" game:paper`;
-    const res = await scryfall(`/cards/search?q=${encodeURIComponent(q)}&unique=prints&order=released`);
-    printsCache.set(name, res?.data ?? []);
+export async function printings(name, { token = false } = {}) {
+  const key = `${token}|${name}`;
+  if (!printsCache.has(key)) {
+    const q = token ? `!"${name}" t:token game:paper` : `!"${name}" game:paper`;
+    const res = await scryfall(`/cards/search?q=${encodeURIComponent(q)}&unique=prints&order=released${token ? "&include_extras=true" : ""}`);
+    printsCache.set(key, res?.data ?? []);
   }
-  return printsCache.get(name);
+  const prints = printsCache.get(key);
+  return prints.length || token ? prints : printings(name, { token: true });
 }
 
 // Fresh data for many cards at once (Scryfall allows 75 per request).

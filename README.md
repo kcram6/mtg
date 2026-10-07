@@ -45,6 +45,8 @@ The token and key are stored **only in that browser** (localStorage). They're ne
 - Set the **Foil** toggle before scanning a run of foils.
 - Before scanning, choose where the cards go: an existing deck, a new deck, or Extras / Uncategorized.
 - Scanning the same card twice in a row is treated as an accident and isn't logged again. Tap **+1** on the card to add a real second copy.
+- Tokens scan like any other card and are filed under the **Token** type (they're left out of mana curves).
+- If a card won't scan, tap **Can't scan it? Search by name**, pick the card, then pick its printing.
 - Sync happens automatically about 20 seconds after your last scan, or tap the sync pill at the top.
 
 ## Running locally

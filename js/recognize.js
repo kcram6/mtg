@@ -13,6 +13,7 @@ const NAME_BARS = [
   { x0: 0.05, x1: 0.78, y0: 0.035, y1: 0.115 },
   { x0: 0.06, x1: 0.78, y0: 0.06, y1: 0.14 },
   { x0: 0.05, x1: 0.78, y0: 0.015, y1: 0.095 },
+  { x0: 0.08, x1: 0.92, y0: 0.035, y1: 0.115 }, // tokens: centered name, no mana cost
 ];
 const BOTTOM_INFO = { x0: 0.02, x1: 0.98, y0: 0.86, y1: 1.0 };
 
@@ -30,12 +31,21 @@ function similarity(a, b) {
   return 1 - prev[b.length] / Math.max(a.length, b.length);
 }
 
-// Card names indexed by their (front-face) normalized form.
+// Card and token names indexed by their (front-face) normalized form.
 let nameIndex = null;
 async function getNameIndex() {
   if (!nameIndex) {
-    const names = await scryfall.cardNames();
-    nameIndex = names.map((name) => ({ name, key: normalize(name.split(" // ")[0]) }));
+    const [names, tokens] = await Promise.all([scryfall.cardNames(), scryfall.tokenNames().catch(() => [])]);
+    const cardKeys = new Set();
+    nameIndex = names.map((name) => {
+      const key = normalize(name.split(" // ")[0]);
+      cardKeys.add(key);
+      return { name, key, isToken: false };
+    });
+    for (const name of tokens) {
+      const key = normalize(name.split(" // ")[0]);
+      if (!cardKeys.has(key)) nameIndex.push({ name, key, isToken: true });
+    }
   }
   return nameIndex;
 }
@@ -49,7 +59,7 @@ function bestNameMatch(index, guess) {
     if (score > bestScore) [best, bestScore] = [entry, score];
   }
   const needed = g.length <= 6 ? 0.85 : 0.75; // short names need a closer match
-  return bestScore >= needed ? { name: best.name, score: bestScore } : null;
+  return bestScore >= needed ? { name: best.name, isToken: best.isToken, score: bestScore } : null;
 }
 
 // OCR picks up stray marks from mana symbols and the frame, e.g. "(Sol Ring ge i".
@@ -96,8 +106,10 @@ async function identifyPrintingWithOcr(cardCanvas, prints) {
 
   let best = null, bestScore = 0, tie = false;
   for (const p of prints) {
+    // Token sets are the main set's code with a "t" prefix (thob), but the card shows "HOB".
+    const printedSet = (p.set_type === "token" ? p.set.replace(/^t/, "") : p.set).toUpperCase();
     const score =
-      (tokens.has(p.set.toUpperCase()) ? 2 : 0) + (numbers.has(p.collector_number.toUpperCase()) ? 2 : 0);
+      (tokens.has(printedSet) ? 2 : 0) + (numbers.has(p.collector_number.toUpperCase()) ? 2 : 0);
     if (score > bestScore) [best, bestScore, tie] = [p, score, false];
     else if (score === bestScore && score > 0) tie = true;
   }
@@ -119,14 +131,28 @@ async function identifyWithAI(apiKey, cardCanvas) {
   const reading = await readCardWithAI(apiKey, toJpegBase64(cardCanvas, 1000));
   if (!reading.card_found || !reading.name) return { noCard: true };
 
-  const { name, set_code: set, collector_number } = reading;
+  const { name, set_code: set, collector_number, is_token } = reading;
   const num = collector_number?.replace(/^0+(?=\d)/, "");
+  if (is_token) return identifyTokenWithAI(name, set, num);
   if (set && num) {
     const card = await scryfall.bySetAndNumber(set, num);
     if (card && similarity(normalize(name), normalize(scryfall.frontName(card))) >= 0.75) return { card, exact: true };
   }
   const card = (set && (await scryfall.fuzzyNamed(name, set))) || (await scryfall.fuzzyNamed(name));
   return card ? { card, exact: false } : null;
+}
+
+// Tokens: look in the token set ("HOB" printed -> "thob"), else any printing of that token.
+async function identifyTokenWithAI(name, set, num) {
+  const tokenSet = set && `t${set.toLowerCase().replace(/^t(?=...)/, "")}`;
+  if (tokenSet && num) {
+    const card = await scryfall.bySetAndNumber(tokenSet, num);
+    if (card && similarity(normalize(name), normalize(scryfall.frontName(card))) >= 0.75) return { card, exact: true };
+  }
+  const prints = await scryfall.printings(name, { token: true });
+  const inSet = prints.find((p) => p.set === tokenSet);
+  if (inSet) return { card: inSet, exact: false };
+  return prints.length ? { card: prints[0], exact: false } : null;
 }
 
 function toJpegBase64(canvas, maxSide) {
@@ -151,7 +177,7 @@ export async function recognizeCard(cardCanvas, { mode, apiKey, allowAI = true, 
   if (mode !== "ai" || !canUseAI) {
     const match = await identifyNameWithOcr(cardCanvas);
     if (match) {
-      const prints = await scryfall.printings(match.name);
+      const prints = await scryfall.printings(match.name, { token: match.isToken });
       if (prints.length) {
         const printing = await identifyPrintingWithOcr(cardCanvas, prints);
         ocrResult = { status: "found", card: printing ?? mostLikelyPrinting(prints), exact: !!printing, via: "ocr", aiUsed: false };

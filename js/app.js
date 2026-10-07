@@ -339,7 +339,7 @@ function renderRecent() {
               ${deckTag(entry?.deck_id ?? r.deckId)}
               ${foil ? `<span class="tag foil">${icon("sparkle")}Foil</span>` : ""}
               ${r.exact ? "" : `<span class="tag warn">${icon("alert")}Printing guessed</span>`}
-              <span class="tag">${r.via === "ai" ? "AI" : "Free OCR"}</span>
+              <span class="tag">${{ ai: "AI", manual: "Manual" }[r.via] ?? "Free OCR"}</span>
             </div>
           </div>
           <div class="price">${money(store.unitPrice(card, foil))}${r.undone ? "" : icon("chevron", "chev-right")}</div>
@@ -374,6 +374,47 @@ $("#recent").addEventListener("click", (e) => {
     store.removeCopy(r.entryId);
   }
   renderRecent();
+});
+
+// ---------- Manual search & add ----------
+// For cards the camera can't read: type a name, pick it, pick the printing.
+const searchDialog = $("#search-dialog");
+let searchTimer = null, searchSeq = 0;
+
+$("#manual-add").addEventListener("click", () => {
+  $("#manual-q").value = "";
+  $("#manual-results").innerHTML = "";
+  $("#manual-dest").innerHTML = `Adds to <strong>${esc(deckLabel(destination))}</strong>${$("#foil").checked ? " as foil" : ""}. Change this above the camera.`;
+  searchDialog.showModal();
+  $("#manual-q").focus();
+});
+
+$("#manual-q").addEventListener("input", (e) => {
+  clearTimeout(searchTimer);
+  const q = e.target.value.trim();
+  if (q.length < 2) return ($("#manual-results").innerHTML = "");
+  searchTimer = setTimeout(async () => {
+    const seq = ++searchSeq;
+    const names = await scryfall.autocomplete(q).catch(() => []);
+    if (seq !== searchSeq) return; // a newer search finished first
+    $("#manual-results").innerHTML = names.length
+      ? names.map((n) => `<li><button data-name="${esc(n)}"><span class="opt-icon">${icon("layers")}</span><span class="opt-name">${esc(n)}</span>${icon("chevron", "chev-right")}</button></li>`).join("")
+      : `<li class="muted" style="padding:12px">No cards found</li>`;
+  }, 250);
+});
+
+$("#manual-results").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-name]");
+  if (!btn) return;
+  pickPrinting(btn.dataset.name, (card) => {
+    searchDialog.close();
+    const entry = store.addCopy(card, { foil: $("#foil").checked, deckId: destination });
+    recent.unshift({ entryId: entry.id, via: "manual", exact: true, undone: false });
+    flash("ok");
+    beep(true);
+    setStatus(`${scryfall.frontName(card)} added to ${deckLabel(destination)}`, "ok");
+    renderRecent();
+  });
 });
 
 // ---------- Card detail / edit ----------

@@ -156,14 +156,15 @@ export function getCollection(place = "all", type = "all") {
   return { rows, totalCards, totalValue, typeCounts };
 }
 
-// Mana curve: number of non-land cards at each mana value (7 = "7+").
+// Mana curve: number of non-land cards at each mana value (7 = "7+"). Tokens
+// aren't part of the deck, so they're left out too.
 export function manaCurve(place) {
   const buckets = Array(8).fill(0);
   let total = 0, sum = 0;
   for (const e of data.inventory) {
     if (!inPlace(e, place)) continue;
     const card = data.cards[e.scryfall_id];
-    if (cardType(card) === "Land") continue;
+    if (["Land", "Token"].includes(cardType(card))) continue;
     const mv = card.cmc ?? 0;
     buckets[Math.min(7, Math.floor(mv))]++;
     total++;
