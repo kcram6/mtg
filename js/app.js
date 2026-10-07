@@ -234,21 +234,35 @@ const scanner = new Scanner({
   onCapture: handleCapture,
 });
 
-async function handleCapture(cardCanvas) {
+// Called by the scanner for each attempt. In auto mode it keeps retrying
+// quietly until the card is read; Claude is asked at most once per card.
+async function handleCapture(cardCanvas, { manual, attempt, aiTried }) {
+  const hasKey = !!settings.anthropicKey;
+  const allowAI = hasKey && (manual || (!aiTried && (attempt >= 2 || settings.readerMode === "ai")));
   $("#guide").className = "busy";
-  setStatus("Reading card…", "busy");
+  if (manual || attempt === 1) setStatus("Reading card…", "busy");
   try {
-    const result = await recognizeCard(cardCanvas, { mode: settings.readerMode, apiKey: settings.anthropicKey });
+    const result = await recognizeCard(cardCanvas, {
+      mode: settings.readerMode,
+      apiKey: settings.anthropicKey,
+      allowAI,
+      deferUncertain: hasKey && !aiTried, // let Claude double-check a shaky read on the next attempt
+    });
+    const aiUsed = result.aiUsed;
+
     if (result.status !== "found") {
-      flash("bad");
-      beep(false);
-      setStatus(
-        settings.anthropicKey
-          ? "No card recognized. Fill the frame and avoid glare."
-          : "No card recognized. Adjust and tap Scan now, or add an API key for AI backup.",
-        "bad",
-      );
-      return false;
+      if (manual) {
+        flash("bad");
+        beep(false);
+        setStatus("No card recognized. Fill the frame and avoid glare.", "bad");
+      } else if (result.noCard) {
+        $("#guide").className = "";
+        setStatus("Hold a card inside the frame");
+        return { outcome: "empty", aiUsed };
+      } else {
+        setStatus(attempt >= 5 ? "Scanning… try filling the frame and avoiding glare" : "Scanning…", "busy");
+      }
+      return { outcome: "retry", aiUsed };
     }
 
     // Scanning the card that was just logged is almost always an accidental
@@ -258,7 +272,7 @@ async function handleCapture(cardCanvas) {
     if (lastCard && lastCard.name === result.card.name) {
       flash("warn");
       setStatus(`Already logged ${scryfall.frontName(result.card)}. Another copy? Tap +1 below.`, "warn");
-      return true;
+      return { outcome: "done", aiUsed };
     }
 
     const entry = store.addCopy(result.card, { foil: $("#foil").checked, deckId: destination });
@@ -267,12 +281,12 @@ async function handleCapture(cardCanvas) {
     beep(true);
     setStatus(`${scryfall.frontName(result.card)} added to ${deckLabel(destination)}`, "ok");
     renderRecent();
-    return true;
+    return { outcome: "done", aiUsed };
   } catch (err) {
-    flash("bad");
-    beep(false);
+    // e.g. a bad API key or no connection: keep trying with free OCR only.
     setStatus(`Error: ${err.message}`, "bad");
-    return true; // don't treat as an empty scene; the user can tap Scan now to retry
+    if (manual) flash("bad");
+    return { outcome: "retry", aiUsed: allowAI };
   }
 }
 
@@ -298,7 +312,7 @@ function stopCamera() {
 
 $("#start-camera").addEventListener("click", startCamera);
 $("#auto").addEventListener("change", (e) => (scanner.auto = e.target.checked));
-$("#scan-now").addEventListener("click", () => (scanner.running ? scanner.capture() : startCamera()));
+$("#scan-now").addEventListener("click", () => (scanner.running ? scanner.capture(undefined, { manual: true }) : startCamera()));
 
 function renderRecent() {
   const live = recent.filter((r) => !r.undone).length;

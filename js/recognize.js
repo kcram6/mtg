@@ -117,7 +117,7 @@ function mostLikelyPrinting(prints) {
 
 async function identifyWithAI(apiKey, cardCanvas) {
   const reading = await readCardWithAI(apiKey, toJpegBase64(cardCanvas, 1000));
-  if (!reading.card_found || !reading.name) return null;
+  if (!reading.card_found || !reading.name) return { noCard: true };
 
   const { name, set_code: set, collector_number } = reading;
   const num = collector_number?.replace(/^0+(?=\d)/, "");
@@ -140,24 +140,31 @@ function toJpegBase64(canvas, maxSide) {
 
 // Returns { status: "found", card, exact, via: "ocr" | "ai" } or { status: "not-found" }.
 // `exact` is false when the printing (set) is a best guess.
-export async function recognizeCard(cardCanvas, { mode, apiKey }) {
+// Returns { status: "found", card, exact, via, aiUsed }
+//      or { status: "not-found", aiUsed, noCard }  (noCard: Claude saw no card in view)
+// `exact` is false when the printing (set) is a best guess. Claude is only
+// called when `allowAI` is set, so retries don't run up the bill. With
+// `deferUncertain`, a shaky OCR read is held back so Claude can confirm it.
+export async function recognizeCard(cardCanvas, { mode, apiKey, allowAI = true, deferUncertain = false }) {
+  const canUseAI = !!apiKey && allowAI;
   let ocrResult = null;
-  if (mode !== "ai") {
+  if (mode !== "ai" || !canUseAI) {
     const match = await identifyNameWithOcr(cardCanvas);
     if (match) {
       const prints = await scryfall.printings(match.name);
       if (prints.length) {
         const printing = await identifyPrintingWithOcr(cardCanvas, prints);
-        ocrResult = { status: "found", card: printing ?? mostLikelyPrinting(prints), exact: !!printing, via: "ocr" };
+        ocrResult = { status: "found", card: printing ?? mostLikelyPrinting(prints), exact: !!printing, via: "ocr", aiUsed: false };
         // A near-exact name read is trusted. A looser one could be the wrong
-        // card, so have Claude double-check when a key is available.
-        if (match.score >= 0.9 || !apiKey) return ocrResult;
+        // card, so have Claude double-check when it's available.
+        if (match.score >= 0.9 || (!canUseAI && !deferUncertain)) return ocrResult;
+        if (!canUseAI) return { status: "not-found", aiUsed: false }; // retry; Claude checks next time
       }
     }
   }
-  if (!apiKey) return { status: "not-found" };
+  if (!canUseAI) return { status: "not-found", aiUsed: false };
 
   const result = await identifyWithAI(apiKey, cardCanvas);
-  if (result) return { status: "found", ...result, via: "ai" };
-  return ocrResult ?? { status: "not-found" };
+  if (result?.card) return { status: "found", ...result, via: "ai", aiUsed: true };
+  return ocrResult ?? { status: "not-found", aiUsed: true, noCard: !!result?.noCard };
 }

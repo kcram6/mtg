@@ -1,12 +1,21 @@
-// Camera + automatic capture. Watches the card-shaped guide on screen and
-// fires `onCapture(cardCanvas)` once a new card has been held still.
+// Camera + automatic capture. Watches the card-shaped guide on screen and, in
+// auto mode, keeps trying to read whatever is held steady inside it until it
+// succeeds; then it waits for the next card.
+//
+// onCapture(cardCanvas, { manual, attempt, aiTried }) must resolve to
+//   { outcome: "done" }   card handled; wait for a different card
+//   { outcome: "retry", aiUsed }  not read yet; try again shortly
+//   { outcome: "empty" }  nothing there (e.g. just the table); ignore this view
 const CARD_RATIO = 63 / 88; // width / height of a Magic card
 const SAMPLE_W = 24, SAMPLE_H = 34; // tiny grayscale thumbnail used for motion detection
 const STILL = 6; // avg pixel change below this = holding steady
 const MOVED = 25; // avg pixel change above this = card swapped / big movement
-const DIFFERENT = 14; // how different from the last scan a scene must be to scan again
+const DIFFERENT = 14; // how different a view must be to count as a new card
 const STILL_FRAMES = 4; // ~0.6s of steadiness at the tick rate below
 const TICK_MS = 150;
+const RETRY_MS = 600; // pause between attempts while searching
+const SLOW_RETRY_MS = 1500; // after many misses, back off to save battery
+const SLOW_AFTER = 8;
 
 export class Scanner {
   constructor({ container, video, guide, onCapture, onStatus }) {
@@ -22,9 +31,18 @@ export class Scanner {
   reset() {
     this.prev = null;
     this.stillCount = 0;
-    this.lastScanned = null; // sample of the last scene we scanned
-    this.movedSinceScan = true;
-    this.emptyScenes = []; // backgrounds where no card was found, so we don't re-scan them
+    this.doneScene = null; // view of the last card handled; wait until it's gone
+    this.movedSinceDone = true;
+    this.emptyScenes = []; // views with no card in them, so we don't keep re-reading them
+    this.newSearch(null);
+  }
+
+  // Start trying to read a (possibly) new card.
+  newSearch(sample) {
+    this.searchScene = sample;
+    this.attempts = 0;
+    this.aiTried = false;
+    this.lastAttempt = 0;
   }
 
   async start() {
@@ -87,7 +105,7 @@ export class Scanner {
     const motion = this.prev ? Scanner.diff(cur, this.prev) : 255;
     this.prev = cur;
 
-    if (motion > MOVED) this.movedSinceScan = true;
+    if (motion > MOVED) this.movedSinceDone = true;
     this.stillCount = motion < STILL ? this.stillCount + 1 : 0;
 
     if (this.busy || !this.auto) return;
@@ -95,31 +113,45 @@ export class Scanner {
       if (motion >= STILL) this.onStatus("Hold the card steady inside the frame");
       return;
     }
-    const isNew =
-      this.movedSinceScan &&
-      (!this.lastScanned || Scanner.diff(cur, this.lastScanned) > DIFFERENT) &&
-      !this.emptyScenes.some((s) => Scanner.diff(cur, s) < DIFFERENT);
-    if (isNew) this.capture(cur);
+
+    // Still showing the card we just logged: wait for the next one.
+    if (this.doneScene) {
+      if (!this.movedSinceDone || Scanner.diff(cur, this.doneScene) <= DIFFERENT) return;
+      this.doneScene = null;
+    }
+    if (this.emptyScenes.some((s) => Scanner.diff(cur, s) < DIFFERENT)) return;
+
+    // A different view than the one we've been trying: start a fresh search.
+    if (!this.searchScene || Scanner.diff(cur, this.searchScene) > DIFFERENT) this.newSearch(cur);
+
+    const wait = this.attempts >= SLOW_AFTER ? SLOW_RETRY_MS : RETRY_MS;
+    if (Date.now() - this.lastAttempt >= wait) this.capture(cur);
   }
 
   // Grab the area inside the guide at full camera resolution and hand it off.
-  async capture(sample = this.sample()) {
+  async capture(sample = this.sample(), { manual = false } = {}) {
     if (this.busy) return;
     this.busy = true;
-    this.lastScanned = sample;
-    this.movedSinceScan = false;
     const r = this.guideInVideo();
     const card = document.createElement("canvas");
     card.width = Math.round(r.w);
     card.height = Math.round(r.h);
     card.getContext("2d").drawImage(this.video, r.x, r.y, r.w, r.h, 0, 0, card.width, card.height);
     try {
-      const found = await this.onCapture(card);
-      if (!found) {
+      this.attempts++;
+      const result = await this.onCapture(card, { manual, attempt: this.attempts, aiTried: this.aiTried });
+      if (result.aiUsed) this.aiTried = true;
+      if (result.outcome === "done") {
+        this.doneScene = sample;
+        this.movedSinceDone = false;
+        this.newSearch(null);
+      } else if (result.outcome === "empty") {
         this.emptyScenes.push(sample);
         if (this.emptyScenes.length > 5) this.emptyScenes.shift();
+        this.newSearch(null);
       }
     } finally {
+      this.lastAttempt = Date.now();
       this.busy = false;
     }
   }
