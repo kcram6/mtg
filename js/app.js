@@ -934,6 +934,7 @@ function showDeckList() {
           <div class="tile-body">
             <div class="tile-name">${esc(d.name)}</div>
             <div class="tile-cmdr">${lead ? esc(cmdrs.map((c) => c.card.name.split(",")[0]).join(" & ")) : "No commander yet"}</div>
+            ${(() => { const r = store.deckRecord(d.id); return r.total ? `<div class="tile-record">${r.wins}W–${r.losses}L · ${pctText(r.rate)}</div>` : ""; })()}
             <div class="tile-stats"><span>${store.deckSize(d.id)} / 100</span><span class="accent">${money(store.deckValue(d.id))}</span></div>
           </div>
         </button>`;
@@ -994,10 +995,103 @@ function renderDeckPage() {
   document.querySelectorAll(".segmented button").forEach((b) => b.classList.toggle("active", b.dataset.tab === deckTab));
   $("#deck-upgrades").hidden = deckTab !== "upgrades";
   $("#deck-wishlist").hidden = deckTab !== "wishlist";
+  $("#deck-games").hidden = deckTab !== "games";
+  renderRecordBar(deck);
   renderRating(deck);
   if (deckTab === "upgrades") renderUpgrades(deck);
-  else renderWishlist(deck);
+  else if (deckTab === "wishlist") renderWishlist(deck);
+  else renderGames(deck);
 }
+
+// ---------- Wins & losses ----------
+const pctText = (x) => (x == null ? "—" : `${Math.round(x * 100)}%`);
+
+function renderRecordBar(deck) {
+  const r = store.deckRecord(deck.id);
+  $("#record-bar").innerHTML = `
+    <div class="record">
+      ${r.total ? `<strong>${r.wins}–${r.losses}</strong><small>${pctText(r.rate)} wins · ${r.total} game${r.total === 1 ? "" : "s"}</small>` : `<strong>No games yet</strong><small>Log your results to track this deck</small>`}
+    </div>
+    <button class="btn sm win" data-log="win">${icon("trophy")}Won</button>
+    <button class="btn sm loss" data-log="loss">${icon("x")}Lost</button>`;
+}
+
+$("#record-bar").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-log]");
+  if (btn) openGameDialog(btn.dataset.log);
+});
+
+const todayLocal = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+function openGameDialog(result) {
+  const f = $("#game-form");
+  f.reset();
+  f.elements.result.value = result;
+  f.elements.players.value = savedSort("mtg-pod-size", "4");
+  f.elements.date.value = todayLocal();
+  $("#game-dialog-title").textContent = `Log a game · ${deckLabel(openDeckId)}`;
+  $("#game-dialog").showModal();
+}
+
+$("#game-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const players = Number(f.elements.players.value) || 4;
+  saveSort("mtg-pod-size", String(players));
+  const result = f.elements.result.value;
+  store.logGame(openDeckId, {
+    result,
+    players,
+    notes: f.elements.notes.value,
+    playedAt: new Date(`${f.elements.date.value}T12:00`).toISOString(),
+  });
+  $("#game-dialog").close();
+  toast(result === "win" ? "Win logged. Nice!" : "Loss logged", result === "win" ? "trophy" : "check");
+  renderDeckPage();
+});
+
+function renderGames(deck) {
+  const r = store.deckRecord(deck.id);
+  if (!r.total) {
+    $("#deck-games").innerHTML = `<div class="empty">No games logged yet. Tap <strong>Won</strong> or <strong>Lost</strong> above after a game.</div>`;
+    return;
+  }
+  const last10 = r.games.slice(0, 10).reverse(); // oldest first, so the newest is on the right
+  $("#deck-games").innerHTML = `
+    <div class="stats">
+      <div class="stat"><span class="stat-label">Win rate</span><strong class="accent">${pctText(r.rate)}</strong><span class="stat-label">vs ${pctText(r.expected)} expected by chance</span></div>
+      <div class="stat"><span class="stat-label">Record</span><strong>${r.wins}–${r.losses}</strong><span class="stat-label">${r.total} game${r.total === 1 ? "" : "s"}</span></div>
+    </div>
+    <div class="panel">
+      <h2>Last ${last10.length}</h2>
+      <div class="last10" aria-label="Last ${last10.length} results, oldest first">${last10.map((g) => `<span class="${g.result === "win" ? "w" : "l"}" title="${new Date(g.played_at).toLocaleDateString()}">${g.result === "win" ? "W" : "L"}</span>`).join("")}</div>
+    </div>
+    <ul class="games-list">
+      ${r.games
+        .map(
+          (g) => `<li>
+            <span class="res ${g.result === "win" ? "w" : "l"}">${icon(g.result === "win" ? "trophy" : "x")}</span>
+            <div class="g-info">
+              <strong>${g.result === "win" ? "Win" : "Loss"}</strong>
+              <small>${new Date(g.played_at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })} · ${g.players}-player</small>
+              ${g.notes ? `<div class="g-notes">${esc(g.notes)}</div>` : ""}
+            </div>
+            <button class="btn icon-only ghost danger" data-delete-game="${g.id}" aria-label="Delete this game" title="Delete this game">${icon("trash")}</button>
+          </li>`,
+        )
+        .join("")}
+    </ul>`;
+}
+
+$("#deck-games").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-delete-game]");
+  if (!btn || !confirm("Delete this game from the log?")) return;
+  store.deleteGame(btn.dataset.deleteGame);
+  renderDeckPage();
+});
 
 async function renderRating(deck) {
   const el = $("#deck-rating");

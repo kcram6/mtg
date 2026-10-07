@@ -4,7 +4,7 @@
 import { toCardRecord, mainType } from "./scryfall.js";
 
 const KEY = "mtg-collection";
-const empty = () => ({ version: 1, cards: {}, inventory: [], removed: [], decks: [] });
+const empty = () => ({ version: 1, cards: {}, inventory: [], removed: [], decks: [], games: [] });
 const now = () => new Date().toISOString();
 
 let data = load();
@@ -112,7 +112,38 @@ export function deleteDeck(id) {
   for (const e of data.inventory) if (e.deck_id === id) Object.assign(e, { deck_id: null, updated_at: t });
   data.decks = data.decks.filter((d) => d.id !== id);
   data.removed.push(id);
+  for (const g of data.games.filter((g) => g.deck_id === id)) data.removed.push(g.id);
+  data.games = data.games.filter((g) => g.deck_id !== id);
   save();
+}
+
+// ---------- Games (win/loss log) ----------
+// Kept as their own list (not inside the deck) so games logged on two devices
+// at once merge instead of overwriting each other.
+export function logGame(deckId, { result, players = 4, notes = "", playedAt = now() }) {
+  const t = now();
+  const game = { id: crypto.randomUUID(), deck_id: deckId, result, players, notes: notes.trim(), played_at: playedAt, updated_at: t };
+  data.games.push(game);
+  save();
+  return game;
+}
+
+export function deleteGame(id) {
+  data.games = data.games.filter((g) => g.id !== id);
+  data.removed.push(id);
+  save();
+}
+
+export const getGames = (deckId) =>
+  data.games.filter((g) => g.deck_id === deckId).sort((a, b) => b.played_at.localeCompare(a.played_at) || b.updated_at.localeCompare(a.updated_at));
+
+export function deckRecord(deckId) {
+  const games = getGames(deckId);
+  const wins = games.filter((g) => g.result === "win").length;
+  const losses = games.length - wins;
+  // Win rate you'd expect by chance: 1 / players, averaged over the games played.
+  const expected = games.length ? games.reduce((sum, g) => sum + 1 / (g.players || 4), 0) / games.length : null;
+  return { games, wins, losses, total: games.length, rate: games.length ? wins / games.length : null, expected };
 }
 
 // ---------- Wishlists ----------
@@ -299,6 +330,7 @@ export function merge(a, b) {
   const removed = new Set([...a.removed, ...(b.removed ?? [])]);
   const inventory = mergeById(a.inventory, b.inventory ?? [], removed);
   const decks = mergeById(a.decks ?? [], b.decks ?? [], removed);
+  const games = mergeById(a.games ?? [], b.games ?? [], removed);
 
   const cards = { ...b.cards };
   for (const [id, c] of Object.entries(a.cards)) {
@@ -308,7 +340,7 @@ export function merge(a, b) {
   const used = new Set(inventory.map((e) => e.scryfall_id));
   for (const id of Object.keys(cards)) if (!used.has(id)) delete cards[id];
 
-  return { ...empty(), ...b, ...a, cards, inventory, decks, removed: [...removed] };
+  return { ...empty(), ...b, ...a, cards, inventory, decks, games, removed: [...removed] };
 }
 
 // After a sync: fold the synced copy into whatever changed locally meanwhile.

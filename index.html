@@ -47,6 +47,7 @@
     <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></symbol>
     <symbol id="i-back" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
     <symbol id="i-trending" viewBox="0 0 24 24"><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></symbol>
+    <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></symbol>
     <symbol id="i-logo" viewBox="0 0 24 24"><rect x="8" y="3" width="11" height="15" rx="2" transform="rotate(12 13.5 10.5)"/><rect x="4.5" y="5.5" width="11" height="15" rx="2" fill="var(--bg)"/></symbol>
   </svg>
 
@@ -148,13 +149,16 @@
           <button id="deck-scan" class="btn primary"><svg class="icon"><use href="#i-camera"/></svg>Scan into deck</button>
           <button id="deck-cards" class="btn"><svg class="icon"><use href="#i-layers"/></svg>View cards</button>
         </div>
+        <div id="record-bar" class="record-bar"></div>
         <div id="deck-rating"></div>
         <div class="segmented" role="tablist">
           <button data-tab="upgrades" class="active" role="tab"><svg class="icon"><use href="#i-trending"/></svg>Upgrades</button>
           <button data-tab="wishlist" role="tab"><svg class="icon"><use href="#i-bookmark"/></svg>Wishlist <span id="wish-count" class="seg-count"></span></button>
+          <button data-tab="games" role="tab"><svg class="icon"><use href="#i-trophy"/></svg>Games</button>
         </div>
         <div id="deck-upgrades"></div>
         <div id="deck-wishlist" hidden></div>
+        <div id="deck-games" hidden></div>
       </div>
     </section>
 
@@ -219,6 +223,34 @@
     <form id="new-deck-form" class="new-deck">
       <input id="new-deck-name" placeholder="New deck name, e.g. Atraxa Superfriends" autocomplete="off" required>
       <button class="btn primary"><svg class="icon"><use href="#i-plus"/></svg>Create</button>
+    </form>
+  </dialog>
+
+  <dialog id="game-dialog" class="sheet">
+    <header>
+      <h2 id="game-dialog-title">Log a game</h2>
+      <button class="btn icon-only ghost" data-close aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+    </header>
+    <form id="game-form" class="game-form">
+      <div class="result-toggle" role="radiogroup" aria-label="Result">
+        <label><input type="radio" name="result" value="win"><span><svg class="icon"><use href="#i-trophy"/></svg>Won</span></label>
+        <label><input type="radio" name="result" value="loss"><span><svg class="icon"><use href="#i-x"/></svg>Lost</span></label>
+      </div>
+      <fieldset class="players">
+        <legend>Players at the table</legend>
+        <div class="chips">
+          <label><input type="radio" name="players" value="2"><span class="chip">2</span></label>
+          <label><input type="radio" name="players" value="3"><span class="chip">3</span></label>
+          <label><input type="radio" name="players" value="4"><span class="chip">4</span></label>
+          <label><input type="radio" name="players" value="5"><span class="chip">5</span></label>
+          <label><input type="radio" name="players" value="6"><span class="chip">6</span></label>
+        </div>
+      </fieldset>
+      <label>Date<input type="date" name="date" required></label>
+      <label>Notes <small>Optional: who won, key plays, what to change</small>
+        <textarea name="notes" rows="2" placeholder="e.g. Lost to a Krenko combo turn 7"></textarea>
+      </label>
+      <button class="btn primary big full">Save game</button>
     </form>
   </dialog>
 
