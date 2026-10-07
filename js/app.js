@@ -8,6 +8,7 @@ import { resetClient } from "./ai.js";
 import * as edhrec from "./edhrec.js";
 import { estimateBracket, BRACKETS } from "./bracket.js";
 import { parseDecklist } from "./importer.js";
+import { initGame, renderSetup as renderPlaySetup } from "./game.js";
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -129,6 +130,7 @@ function showView(name) {
   if (name !== "scan" && scanner.running) stopCamera();
   if (name === "collection") renderCollection();
   if (name === "decks") wasActive || !openDeckId ? showDeckList() : renderDeckPage();
+  if (name === "play") renderPlaySetup();
   $("main").scrollTop = 0;
 }
 document.querySelectorAll(".tabbar button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
@@ -1713,6 +1715,9 @@ $("#deck-wishlist").addEventListener("click", async (e) => {
   else return;
   renderDeckPage();
 });
+
+// ---------- Life counter ----------
+initGame({ icon, esc, toast, onLogged: () => openDeckId && renderDeckPage() });
 
 // ---------- Start ----------
 if (restoredFromLink) setTimeout(() => toast("Settings restored from your setup link"), 300);

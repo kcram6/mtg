@@ -67,6 +67,9 @@ Then open http://localhost:8000. The camera works on `localhost`. On a phone you
 - [x] Decks: choose a deck (or Extras) before scanning, move cards, rename/delete decks
 - [x] Card types and mana values, with type filters and a mana curve per deck
 - [x] Commanders: mark a deck's commander (or two partners), see its color identity, flag cards outside it
+- [x] Unused gems: valuable or popular cards in no deck, with sell value and which decks they fit
+- [x] Decklist import: paste a Moxfield/Archidekt/MTGO list; moves owned cards in and builds a buy list (TCGplayer Mass Entry)
+- [x] Life counter (Play tab): 2-4 players, commander damage, poison, commander tax, monarch, initiative; logs results to your decks
 - [x] Singleton check: flags duplicate cards in a deck (basic lands and "any number" cards excepted), with a one-tap fix
 - [x] Win/loss tracking per deck: quick logging, win rate vs. chance, last 10 results, game history with notes
 - [x] Deck rating: estimated Commander bracket from Game Changers, mass land denial and extra turns
