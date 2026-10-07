@@ -134,6 +134,25 @@ dialog h2 { margin: 0; color: var(--text); }
 #printing-grid button { padding: 6px; display: flex; flex-direction: column; gap: 4px; text-align: left; font-size: 12px; }
 #printing-grid img { width: 100%; border-radius: 4px; }
 
+/* Full-screen success: green flash + check mark */
+#success {
+  position: fixed; inset: 0; z-index: 50; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(62, 207, 122, 0.5); opacity: 0;
+}
+#success svg { width: min(45vw, 200px); filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.35)); }
+#success circle { fill: var(--ok); }
+#success path {
+  fill: none; stroke: #fff; stroke-width: 9; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 70; stroke-dashoffset: 70;
+}
+#success.show { animation: success-flash 1s ease-out; }
+#success.show svg { animation: success-pop 1s ease-out; }
+#success.show path { animation: success-draw 0.35s 0.1s ease-out forwards; }
+@keyframes success-flash { 0% { opacity: 1; } 55% { opacity: 1; background: rgba(62, 207, 122, 0.15); } 100% { opacity: 0; } }
+@keyframes success-pop { 0% { transform: scale(0.5); } 25% { transform: scale(1.08); } 40%, 100% { transform: scale(1); } }
+@keyframes success-draw { to { stroke-dashoffset: 0; } }
+
 #toast {
   position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%);
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px;

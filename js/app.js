@@ -124,11 +124,21 @@ function beep(ok) {
 }
 
 function flash(kind) {
-  const f = $("#flash"), g = $("#guide");
-  f.className = kind;
+  const g = $("#guide");
   g.className = kind;
-  requestAnimationFrame(() => requestAnimationFrame(() => (f.className = "")));
   setTimeout(() => (g.className = ""), 900);
+
+  if (kind === "ok") {
+    // Full-screen green flash + check mark; restart the animation for back-to-back scans.
+    const s = $("#success");
+    s.classList.remove("show");
+    void s.offsetWidth;
+    s.classList.add("show");
+  } else {
+    const f = $("#flash");
+    f.className = kind;
+    requestAnimationFrame(() => requestAnimationFrame(() => (f.className = "")));
+  }
 }
 
 // ---------- Scanning ----------
