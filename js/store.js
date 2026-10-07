@@ -36,6 +36,7 @@ export function addCopy(scryfallCard, { foil = false, deckId = null } = {}) {
   const t = now();
   const entry = { id: crypto.randomUUID(), scryfall_id: card.scryfall_id, foil, deck_id: deckId, added_at: t, updated_at: t };
   data.inventory.push(entry);
+  fulfillWishlist(deckId, card.name);
   save();
   return entry;
 }
@@ -69,7 +70,10 @@ export function changePrinting(inventoryIds, scryfallCard) {
 }
 
 export const setFoil = (inventoryId, foil) => updateEntries([inventoryId], { foil });
-export const moveCopies = (inventoryIds, deckId) => updateEntries(inventoryIds, { deck_id: deckId });
+export function moveCopies(inventoryIds, deckId) {
+  for (const e of data.inventory) if (inventoryIds.includes(e.id)) fulfillWishlist(deckId, data.cards[e.scryfall_id].name);
+  updateEntries(inventoryIds, { deck_id: deckId });
+}
 
 export function updatePrices(scryfallCards) {
   for (const c of scryfallCards) data.cards[c.id] = toCardRecord(c);
@@ -110,6 +114,45 @@ export function deleteDeck(id) {
   data.removed.push(id);
   save();
 }
+
+// ---------- Wishlists ----------
+// Cards you want for a deck. Stored on the deck; an item is removed
+// automatically once a copy of that card is added to the deck.
+const sameName = (a, b) => a.split(" // ")[0].toLowerCase() === b.split(" // ")[0].toLowerCase();
+
+export const getWishlist = (deckId) => getDeck(deckId)?.wishlist ?? [];
+export const onWishlist = (deckId, name) => getWishlist(deckId).some((w) => sameName(w.name, name));
+
+export function addToWishlist(deckId, scryfallCard) {
+  const deck = getDeck(deckId);
+  const item = { ...toCardRecord(scryfallCard), added_at: now() };
+  deck.wishlist = getWishlist(deckId).filter((w) => !sameName(w.name, item.name)).concat(item);
+  deck.updated_at = now();
+  save();
+}
+
+export function removeFromWishlist(deckId, name) {
+  const deck = getDeck(deckId);
+  deck.wishlist = getWishlist(deckId).filter((w) => !sameName(w.name, name));
+  deck.updated_at = now();
+  save();
+}
+
+function fulfillWishlist(deckId, name) {
+  const deck = getDeck(deckId);
+  if (!deck?.wishlist?.some((w) => sameName(w.name, name))) return;
+  deck.wishlist = deck.wishlist.filter((w) => !sameName(w.name, name));
+  deck.updated_at = now();
+}
+
+// Your copies of a card anywhere in the collection (any printing).
+export const ownedCopies = (name) => data.inventory.filter((e) => sameName(data.cards[e.scryfall_id]?.name ?? "", name));
+
+export const deckValue = (deckId) =>
+  data.inventory.filter((e) => e.deck_id === deckId).reduce((sum, e) => sum + (unitPrice(data.cards[e.scryfall_id], e.foil) ?? 0), 0);
+
+export const deckCardNames = (deckId) =>
+  new Set(data.inventory.filter((e) => e.deck_id === deckId).map((e) => data.cards[e.scryfall_id].name.split(" // ")[0].toLowerCase()));
 
 // ---------- Commanders ----------
 // A deck's commander is a specific copy in that deck; up to two (partners).

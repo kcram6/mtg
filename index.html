@@ -44,6 +44,9 @@
     <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
     <symbol id="i-crown" viewBox="0 0 24 24"><path d="M11.56 3.27a.5.5 0 0 1 .88 0l2.95 5.6a1 1 0 0 0 1.52.29l4.27-3.66a.5.5 0 0 1 .8.52l-2.83 10.25a1 1 0 0 1-.96.73H5.81a1 1 0 0 1-.96-.73L2.02 6.02a.5.5 0 0 1 .8-.52l4.27 3.66a1 1 0 0 0 1.52-.29z"/><path d="M5 21h14"/></symbol>
+    <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+    <symbol id="i-trending" viewBox="0 0 24 24"><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></symbol>
     <symbol id="i-logo" viewBox="0 0 24 24"><rect x="8" y="3" width="11" height="15" rx="2" transform="rotate(12 13.5 10.5)"/><rect x="4.5" y="5.5" width="11" height="15" rx="2" fill="var(--bg)"/></symbol>
   </svg>
 
@@ -112,6 +115,32 @@
       <ul id="collection" class="card-list"></ul>
     </section>
 
+    <!-- Decks -->
+    <section id="view-decks" class="view">
+      <div id="decks-list">
+        <div class="page-head">
+          <h1>Decks</h1>
+          <button id="new-deck-btn" class="btn sm"><svg class="icon"><use href="#i-plus"/></svg>New deck</button>
+        </div>
+        <div id="deck-grid" class="deck-grid"></div>
+      </div>
+
+      <div id="deck-page" hidden>
+        <button id="deck-back" class="btn ghost sm back"><svg class="icon"><use href="#i-back"/></svg>All decks</button>
+        <div id="deck-hero" class="deck-hero"></div>
+        <div class="deck-actions">
+          <button id="deck-scan" class="btn primary"><svg class="icon"><use href="#i-camera"/></svg>Scan into deck</button>
+          <button id="deck-cards" class="btn"><svg class="icon"><use href="#i-layers"/></svg>View cards</button>
+        </div>
+        <div class="segmented" role="tablist">
+          <button data-tab="upgrades" class="active" role="tab"><svg class="icon"><use href="#i-trending"/></svg>Upgrades</button>
+          <button data-tab="wishlist" role="tab"><svg class="icon"><use href="#i-bookmark"/></svg>Wishlist <span id="wish-count" class="seg-count"></span></button>
+        </div>
+        <div id="deck-upgrades"></div>
+        <div id="deck-wishlist" hidden></div>
+      </div>
+    </section>
+
     <!-- Settings -->
     <section id="view-settings" class="view">
       <form id="settings-form">
@@ -149,6 +178,7 @@
   <nav class="tabbar">
     <button data-view="scan" class="active"><svg class="icon"><use href="#i-camera"/></svg><span>Scan</span></button>
     <button data-view="collection"><svg class="icon"><use href="#i-layers"/></svg><span>Collection</span></button>
+    <button data-view="decks"><svg class="icon"><use href="#i-swords"/></svg><span>Decks</span></button>
     <button data-view="settings"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></button>
   </nav>
 
@@ -167,7 +197,7 @@
 
   <dialog id="search-dialog" class="sheet">
     <header>
-      <h2>Add a card</h2>
+      <h2 id="search-title">Add a card</h2>
       <button class="btn icon-only ghost" data-close aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
     </header>
     <div class="search-body">

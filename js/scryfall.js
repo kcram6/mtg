@@ -46,6 +46,7 @@ export function toCardRecord(c) {
     color_identity: c.color_identity,
     image_small: images.small,
     image_normal: images.normal,
+    image_art: images.art_crop,
     price_usd: c.prices?.usd ?? null,
     price_usd_foil: c.prices?.usd_foil ?? null,
     price_usd_etched: c.prices?.usd_etched ?? null,
@@ -64,6 +65,10 @@ export function mainType(typeLine = "") {
   if (/\bLand\b/.test(front)) return "Land";
   return CARD_TYPES.find((t) => new RegExp(`\\b${t}\\b`).test(front)) ?? "Other";
 }
+
+// Just the artwork, for banners. Older records only stored the full card image,
+// whose URL differs only by size folder.
+export const artCrop = (card) => card?.image_art ?? card?.image_normal?.replace("/normal/", "/art_crop/");
 
 export const frontName = (c) => c.card_faces?.[0]?.name ?? c.name;
 

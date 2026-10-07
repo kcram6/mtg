@@ -5,6 +5,7 @@ import { Scanner } from "./scanner.js";
 import { recognizeCard } from "./recognize.js";
 import { warmUp as warmUpOcr } from "./ocr.js";
 import { resetClient } from "./ai.js";
+import * as edhrec from "./edhrec.js";
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -62,10 +63,13 @@ $("#export").addEventListener("click", () => {
 
 // ---------- Navigation ----------
 function showView(name) {
+  const wasActive = $(`#view-${name}`).classList.contains("active");
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
   document.querySelectorAll(".tabbar button").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
   if (name !== "scan" && scanner.running) stopCamera();
   if (name === "collection") renderCollection();
+  if (name === "decks") wasActive || !openDeckId ? showDeckList() : renderDeckPage();
+  $("main").scrollTop = 0;
 }
 document.querySelectorAll(".tabbar button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 
@@ -291,8 +295,8 @@ async function handleCapture(cardCanvas, { manual, attempt, aiTried }) {
   }
 }
 
-async function startCamera() {
-  if (!(await pickDestination())) return;
+async function startCamera({ ask = true } = {}) {
+  if (ask && !(await pickDestination())) return;
   audio ??= new AudioContext();
   warmUpOcr();
   scryfall.cardNames().catch(() => {}); // preload the name list used for matching
@@ -311,7 +315,7 @@ function stopCamera() {
   setStatus("Camera paused");
 }
 
-$("#start-camera").addEventListener("click", startCamera);
+$("#start-camera").addEventListener("click", () => startCamera());
 $("#auto").addEventListener("change", (e) => (scanner.auto = e.target.checked));
 $("#scan-now").addEventListener("click", () => (scanner.running ? scanner.capture(undefined, { manual: true }) : startCamera()));
 
@@ -376,18 +380,21 @@ $("#recent").addEventListener("click", (e) => {
   renderRecent();
 });
 
-// ---------- Manual search & add ----------
-// For cards the camera can't read: type a name, pick it, pick the printing.
+// ---------- Card search sheet ----------
+// Type a name, get suggestions (tokens included), tap one. Used both to add a
+// card the camera can't read and to add cards to a wishlist.
 const searchDialog = $("#search-dialog");
-let searchTimer = null, searchSeq = 0;
+let searchTimer = null, searchSeq = 0, onSearchPick = null;
 
-$("#manual-add").addEventListener("click", () => {
+function openSearch({ title, note, onPick }) {
+  $("#search-title").textContent = title;
+  $("#manual-dest").innerHTML = note;
   $("#manual-q").value = "";
   $("#manual-results").innerHTML = "";
-  $("#manual-dest").innerHTML = `Adds to <strong>${esc(deckLabel(destination))}</strong>${$("#foil").checked ? " as foil" : ""}. Change this above the camera.`;
+  onSearchPick = onPick;
   searchDialog.showModal();
   $("#manual-q").focus();
-});
+}
 
 $("#manual-q").addEventListener("input", (e) => {
   clearTimeout(searchTimer);
@@ -405,17 +412,26 @@ $("#manual-q").addEventListener("input", (e) => {
 
 $("#manual-results").addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-name]");
-  if (!btn) return;
-  pickPrinting(btn.dataset.name, (card) => {
-    searchDialog.close();
-    const entry = store.addCopy(card, { foil: $("#foil").checked, deckId: destination });
-    recent.unshift({ entryId: entry.id, via: "manual", exact: true, undone: false });
-    flash("ok");
-    beep(true);
-    setStatus(`${scryfall.frontName(card)} added to ${deckLabel(destination)}`, "ok");
-    renderRecent();
-  });
+  if (btn) onSearchPick?.(btn.dataset.name);
 });
+
+// Add a card the camera can't read: pick it, then pick the printing.
+$("#manual-add").addEventListener("click", () =>
+  openSearch({
+    title: "Add a card",
+    note: `Adds to <strong>${esc(deckLabel(destination))}</strong>${$("#foil").checked ? " as foil" : ""}. Change this above the camera.`,
+    onPick: (name) =>
+      pickPrinting(name, (card) => {
+        searchDialog.close();
+        const entry = store.addCopy(card, { foil: $("#foil").checked, deckId: destination });
+        recent.unshift({ entryId: entry.id, via: "manual", exact: true, undone: false });
+        flash("ok");
+        beep(true);
+        setStatus(`${scryfall.frontName(card)} added to ${deckLabel(destination)}`, "ok");
+        renderRecent();
+      }),
+  }),
+);
 
 // ---------- Card detail / edit ----------
 // Shows one printing and lets you edit each physical copy (foil, remove) or
@@ -626,7 +642,7 @@ function renderCommanders(deck) {
   panel.innerHTML = commanders
     .map(
       ({ entry, card }) => `<button class="cmdr" data-entry="${entry.id}">
-        <img src="${esc(card.image_normal ?? card.image_small)}" alt="">
+        <img src="${esc(scryfall.artCrop(card) ?? card.image_small)}" alt="">
         <div class="cmdr-info">
           <div class="cmdr-label">${icon("crown")}Commander</div>
           <div class="cmdr-name">${esc(card.name)}</div>
@@ -747,6 +763,301 @@ $("#refresh-prices").addEventListener("click", async (e) => {
     btn.disabled = false;
     btn.innerHTML = icon("refresh");
   }
+});
+
+// ---------- Decks tab ----------
+let openDeckId = null;
+let deckTab = "upgrades";
+const recState = { filter: "top", ownedOnly: false, shown: 25 };
+const recDetails = new Map(); // Scryfall id -> full Scryfall card (image, price) for recommendations
+
+const sortedIdentity = (deckId) => [...(store.commanderIdentity(deckId) ?? [])].sort((a, b) => WUBRG.indexOf(a) - WUBRG.indexOf(b));
+const artStyle = (card) => (card ? `style="--art:url('${esc(scryfall.artCrop(card))}')"` : "");
+
+function showDeckList() {
+  openDeckId = null;
+  $("#deck-page").hidden = true;
+  $("#decks-list").hidden = false;
+  const decks = store.getDecks();
+  $("#deck-grid").innerHTML =
+    decks
+      .map((d) => {
+        const cmdrs = store.getCommanders(d.id);
+        const lead = cmdrs[0]?.card;
+        return `<button class="deck-tile" data-deck="${d.id}" ${artStyle(lead)}>
+          ${lead ? `<div class="tile-art"></div>` : `<div class="tile-empty">${icon("swords")}</div>`}
+          ${lead ? `<div class="tile-pips">${identityPips(sortedIdentity(d.id))}</div>` : ""}
+          <div class="tile-body">
+            <div class="tile-name">${esc(d.name)}</div>
+            <div class="tile-cmdr">${lead ? esc(cmdrs.map((c) => c.card.name.split(",")[0]).join(" & ")) : "No commander yet"}</div>
+            <div class="tile-stats"><span>${store.deckSize(d.id)} / 100</span><span class="accent">${money(store.deckValue(d.id))}</span></div>
+          </div>
+        </button>`;
+      })
+      .join("") + `<button class="deck-tile new" data-new-deck><span>${icon("plus")}New deck</span></button>`;
+}
+
+async function createDeckFlow() {
+  const name = prompt("New deck name");
+  if (!name?.trim()) return;
+  const deck = store.createDeck(name);
+  toast(`Created deck “${deck.name}”`);
+  openDeck(deck.id);
+}
+
+$("#deck-grid").addEventListener("click", (e) => {
+  const tile = e.target.closest(".deck-tile");
+  if (!tile) return;
+  if ("newDeck" in tile.dataset) return createDeckFlow();
+  openDeck(tile.dataset.deck);
+});
+$("#new-deck-btn").addEventListener("click", createDeckFlow);
+$("#deck-back").addEventListener("click", showDeckList);
+
+function openDeck(deckId) {
+  openDeckId = deckId;
+  deckTab = "upgrades";
+  Object.assign(recState, { filter: "top", ownedOnly: false, shown: 25 });
+  $("#decks-list").hidden = true;
+  $("#deck-page").hidden = false;
+  $("main").scrollTop = 0;
+  renderDeckPage();
+}
+
+function renderDeckPage() {
+  const deck = store.getDeck(openDeckId);
+  if (!deck) return showDeckList();
+  const cmdrs = store.getCommanders(deck.id);
+  const lead = cmdrs[0]?.card;
+  const wishlist = store.getWishlist(deck.id);
+  const wishCost = wishlist.reduce((sum, w) => sum + (Number(w.price_usd) || 0), 0);
+  $("#deck-hero").innerHTML = `
+    ${lead ? `<div class="hero-art" ${artStyle(lead)}></div>` : ""}
+    <div class="hero-body">
+      ${lead ? `<div>${identityPips(sortedIdentity(deck.id))}</div>` : ""}
+      <h1>${esc(deck.name)}</h1>
+      <div class="hero-cmdr">${icon("crown")}${lead ? esc(cmdrs.map((c) => c.card.name).join(" & ")) : "No commander yet"}</div>
+      <div class="hero-stats">
+        <div><strong>${store.deckSize(deck.id)} / 100</strong>cards</div>
+        <div><strong class="accent">${money(store.deckValue(deck.id))}</strong>value</div>
+        <div><strong>${money(wishCost)}</strong>wishlist</div>
+      </div>
+    </div>`;
+  $("#wish-count").textContent = wishlist.length || "";
+  document.querySelectorAll(".segmented button").forEach((b) => b.classList.toggle("active", b.dataset.tab === deckTab));
+  $("#deck-upgrades").hidden = deckTab !== "upgrades";
+  $("#deck-wishlist").hidden = deckTab !== "wishlist";
+  if (deckTab === "upgrades") renderUpgrades(deck);
+  else renderWishlist(deck);
+}
+
+document.querySelector(".segmented").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-tab]");
+  if (!btn) return;
+  deckTab = btn.dataset.tab;
+  renderDeckPage();
+});
+
+$("#deck-scan").addEventListener("click", () => {
+  setDestination(openDeckId);
+  showView("scan");
+  startCamera({ ask: false });
+});
+$("#deck-cards").addEventListener("click", () => {
+  place = openDeckId;
+  typeFilter = "all";
+  showView("collection");
+});
+
+// Where you already own a card, e.g. "Extras" or "Merfolk".
+function ownedSummary(name, deckId) {
+  const elsewhere = store.ownedCopies(name).filter((e) => e.deck_id !== deckId);
+  if (!elsewhere.length) return null;
+  const places = [...new Set(elsewhere.map((e) => deckLabel(e.deck_id)))];
+  return { entries: elsewhere, label: `You own ${elsewhere.length > 1 ? `${elsewhere.length} · ` : ""}${places.join(", ")}` };
+}
+
+// Move one owned copy into the deck, preferring one sitting in Extras.
+function moveOwnedHere(name, deckId) {
+  const owned = ownedSummary(name, deckId);
+  if (!owned) return;
+  const copy = owned.entries.find((e) => !store.getDeck(e.deck_id)) ?? owned.entries[0];
+  const from = deckLabel(copy.deck_id);
+  store.moveCopies([copy.id], deckId);
+  toast(`Moved ${name} from ${from}`);
+}
+
+const pct = (x) => `${Math.round(x * 100)}%`;
+
+async function renderUpgrades(deck) {
+  const el = $("#deck-upgrades");
+  const cmdrs = store.getCommanders(deck.id);
+  if (!cmdrs.length) {
+    el.innerHTML = `<div class="commander-hint">${icon("crown")}<span>Set a commander to get upgrade ideas. Tap <strong>View cards</strong>, open a legendary card and choose <strong>Make commander</strong>.</span></div>`;
+    return;
+  }
+  if (!el.dataset.deck || el.dataset.deck !== deck.id) el.innerHTML = `<div class="loading">${icon("loader", "spin")}Loading recommendations…</div>`;
+  el.dataset.deck = deck.id;
+
+  let recs;
+  try {
+    recs = await edhrec.recommendations(cmdrs.map((c) => c.card.name));
+  } catch (err) {
+    el.innerHTML = `<div class="commander-hint">${icon("alert")}<span>${esc(err.message)}</span></div>`;
+    return;
+  }
+  if (openDeckId !== deck.id || deckTab !== "upgrades") return;
+
+  const inDeck = store.deckCardNames(deck.id);
+  const commanderNames = new Set(cmdrs.map((c) => edhrec.nameKey(c.card.name)));
+  let list = recs.cards.filter((c) => !inDeck.has(edhrec.nameKey(c.name)) && !commanderNames.has(edhrec.nameKey(c.name)));
+  if (recState.filter === "top") list.sort((a, b) => b.inclusion + b.synergy - (a.inclusion + a.synergy));
+  else list = list.filter((c) => c.category === recState.filter).sort((a, b) => b.inclusion - a.inclusion);
+  if (recState.ownedOnly) list = list.filter((c) => ownedSummary(c.name, deck.id));
+  const shown = list.slice(0, recState.shown);
+
+  // Images and prices come from Scryfall, 75 cards per request.
+  const missing = shown.map((c) => c.id).filter((id) => id && !recDetails.has(id));
+  if (missing.length) {
+    el.querySelector(".rec-list")?.classList.add("loading-more");
+    const cards = await scryfall.fetchMany(missing).catch(() => []);
+    cards.forEach((c) => recDetails.set(c.id, c));
+    if (openDeckId !== deck.id || deckTab !== "upgrades") return;
+  }
+
+  const chips = [["top", "Top picks"], ...recs.categories.map((c) => [c, c])];
+  el.innerHTML = `
+    <div class="chips rec-chips">${chips.map(([id, label]) => `<button class="chip small ${recState.filter === id ? "active" : ""}" data-filter="${esc(id)}">${esc(label)}</button>`).join("")}</div>
+    <div class="toolbar"><label class="switch"><input type="checkbox" id="owned-only" ${recState.ownedOnly ? "checked" : ""}><span class="track"></span>Only cards I own</label></div>
+    <ul class="card-list rec-list">
+      ${
+        shown.length
+          ? shown
+              .map((c) => {
+                const sc = recDetails.get(c.id);
+                const rec = sc ? scryfall.toCardRecord(sc) : null;
+                const owned = ownedSummary(c.name, deck.id);
+                const wished = store.onWishlist(deck.id, c.name);
+                return `<li data-name="${esc(c.name)}">
+                  <img src="${esc(rec?.image_small ?? "")}" alt="" loading="lazy">
+                  <div class="info">
+                    <div class="name">${esc(c.name)}</div>
+                    <div class="meta">${rec ? `${manaCost(rec.mana_cost)} ${esc(rec.type_line)}` : ""}</div>
+                    <div class="rec-stats"><span>In <b>${pct(c.inclusion)}</b> of decks</span>${c.synergy > 0.01 ? `<span><b>+${pct(c.synergy)}</b> synergy</span>` : ""}</div>
+                    <div class="tags">
+                      ${c.gameChanger ? `<span class="tag warn">Game Changer</span>` : ""}
+                      ${owned ? `<span class="tag owned">${icon("check")}${esc(owned.label)}</span>` : ""}
+                    </div>
+                  </div>
+                  <div class="price">${money(rec ? store.unitPrice(rec, false) : null)}</div>
+                  <div class="actions">
+                    ${owned ? `<button class="btn sm primary" data-move-here>${icon("swords")}Move here</button>` : ""}
+                    <button class="btn sm ${wished ? "on" : ""}" data-wish>${icon("bookmark")}${wished ? "On wishlist" : "Wishlist"}</button>
+                    ${rec?.tcgplayer_url ? `<a class="btn sm" href="${esc(rec.tcgplayer_url)}" target="_blank" rel="noopener">${icon("external")}TCGplayer</a>` : ""}
+                  </div>
+                </li>`;
+              })
+              .join("")
+          : `<li class="empty">${recState.ownedOnly ? "None of these are in your collection yet." : "Nothing left to suggest here. Nice deck!"}</li>`
+      }
+    </ul>
+    <div class="list-foot">
+      ${list.length > shown.length ? `<button class="btn" data-more>Show more (${list.length - shown.length})</button>` : ""}
+      <div class="attribution">Recommendations from <a href="https://edhrec.com/commanders/${edhrec.slug(cmdrs[0].card.name)}" target="_blank" rel="noopener">EDHREC</a> · prices from TCGplayer via Scryfall</div>
+    </div>`;
+}
+
+$("#deck-upgrades").addEventListener("click", (e) => {
+  const deckId = openDeckId;
+  const chip = e.target.closest("[data-filter]");
+  if (chip) {
+    Object.assign(recState, { filter: chip.dataset.filter, shown: 25 });
+    return renderDeckPage();
+  }
+  if (e.target.closest("[data-more]")) {
+    recState.shown += 25;
+    return renderDeckPage();
+  }
+  const row = e.target.closest("li[data-name]");
+  if (!row) return;
+  const name = row.dataset.name;
+  if (e.target.closest("[data-move-here]")) {
+    moveOwnedHere(name, deckId);
+  } else if (e.target.closest("[data-wish]")) {
+    if (store.onWishlist(deckId, name)) store.removeFromWishlist(deckId, name);
+    else {
+      const card = [...recDetails.values()].find((c) => c.name === name);
+      if (!card) return;
+      store.addToWishlist(deckId, card);
+      toast(`Added ${name} to wishlist`, "bookmark");
+    }
+  } else return;
+  renderDeckPage();
+});
+$("#deck-upgrades").addEventListener("change", (e) => {
+  if (e.target.id !== "owned-only") return;
+  Object.assign(recState, { ownedOnly: e.target.checked, shown: 25 });
+  renderDeckPage();
+});
+
+function renderWishlist(deck) {
+  const items = store.getWishlist(deck.id);
+  const total = items.reduce((sum, w) => sum + (Number(w.price_usd) || 0), 0);
+  $("#deck-wishlist").innerHTML = `
+    <div class="wish-head">
+      <div class="total"><strong>${money(total)}</strong>${items.length} card${items.length === 1 ? "" : "s"} to get</div>
+      <button class="btn primary" data-add-wish>${icon("plus")}Add card</button>
+    </div>
+    <ul class="card-list">
+      ${
+        items.length
+          ? items
+              .map((w) => {
+                const owned = ownedSummary(w.name, deck.id);
+                return `<li data-name="${esc(w.name)}">
+                  <img src="${esc(w.image_small)}" alt="" loading="lazy">
+                  <div class="info">
+                    <div class="name">${esc(w.name)}</div>
+                    <div class="meta">${manaCost(w.mana_cost)} ${esc(w.type_line)}</div>
+                    <div class="tags">${owned ? `<span class="tag owned">${icon("check")}${esc(owned.label)}</span>` : ""}</div>
+                  </div>
+                  <div class="price">${money(store.unitPrice(w, false))}</div>
+                  <div class="actions">
+                    ${owned ? `<button class="btn sm primary" data-move-here>${icon("swords")}Move here</button>` : ""}
+                    ${w.tcgplayer_url ? `<a class="btn sm" href="${esc(w.tcgplayer_url)}" target="_blank" rel="noopener">${icon("external")}TCGplayer</a>` : ""}
+                    <button class="btn sm" data-unwish>${icon("x")}Remove</button>
+                  </div>
+                </li>`;
+              })
+              .join("")
+          : `<li class="empty">Nothing on the wishlist yet. Add cards from <strong>Upgrades</strong> or tap <strong>Add card</strong>.</li>`
+      }
+    </ul>
+    ${items.length ? `<p class="attribution">Cards leave the wishlist automatically when you scan or move a copy into this deck.</p>` : ""}`;
+}
+
+$("#deck-wishlist").addEventListener("click", (e) => {
+  const deckId = openDeckId;
+  if (e.target.closest("[data-add-wish]")) {
+    return openSearch({
+      title: "Add to wishlist",
+      note: `For <strong>${esc(deckLabel(deckId))}</strong>`,
+      onPick: async (name) => {
+        const card = await scryfall.fuzzyNamed(name).catch(() => null);
+        if (!card) return toast("Couldn't find that card", "alert");
+        store.addToWishlist(deckId, card);
+        searchDialog.close();
+        toast(`Added ${card.name} to wishlist`, "bookmark");
+        renderDeckPage();
+      },
+    });
+  }
+  const row = e.target.closest("li[data-name]");
+  if (!row) return;
+  if (e.target.closest("[data-move-here]")) moveOwnedHere(row.dataset.name, deckId);
+  else if (e.target.closest("[data-unwish]")) store.removeFromWishlist(deckId, row.dataset.name);
+  else return;
+  renderDeckPage();
 });
 
 // ---------- Start ----------
