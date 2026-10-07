@@ -43,7 +43,8 @@ $("#test-github").addEventListener("click", async () => {
   settingsMsg(`${icon("loader", "spin")}Checking…`);
   try {
     const repo = await github.testConnection({ ...settings, ...Object.fromEntries(new FormData(form)) });
-    settingsMsg(`${icon("check", "accent")}Connected to ${esc(repo.full_name)}${repo.private ? " (private)" : " (warning: this repo is public)"}`);
+    settingsMsg(`${icon("check", "accent")}Connected and synced ${store.getCollection().totalCards} cards to ${esc(repo.full_name)}${repo.private ? " (private)" : " (warning: this repo is public)"}`);
+    updateSyncPill();
   } catch (err) {
     settingsMsg(`${icon("alert")}${esc(err.message)}`);
   }

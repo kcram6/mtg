@@ -25,10 +25,19 @@ const toBase64 = (str) => {
 };
 const fromBase64 = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, "")), (c) => c.charCodeAt(0)));
 
+// Turn GitHub's errors into something actionable.
+async function githubError(res) {
+  const detail = (await res.json().catch(() => ({}))).message ?? "";
+  if (res.status === 401) return new Error("GitHub token is invalid or was deleted. Create a new one and paste it in Settings.");
+  if (res.status === 403) return new Error("GitHub token can't write to the repo. Edit the token: Repository permissions → Contents → Read and write.");
+  if (res.status === 404) return new Error("Repo not found. Check the repo name, and that the token has access to it.");
+  return new Error(`GitHub ${res.status}: ${detail}`);
+}
+
 async function fetchRemote(settings) {
   const res = await request(settings, "GET");
   if (res.status === 404) return { remote: null, sha: undefined };
-  if (!res.ok) throw new Error(`GitHub ${res.status}: ${(await res.json()).message}`);
+  if (!res.ok) throw await githubError(res);
   const file = await res.json();
   return { remote: JSON.parse(fromBase64(file.content)), sha: file.sha };
 }
@@ -51,19 +60,19 @@ export async function sync(settings) {
       return;
     }
     // 409/422: someone else (another device) updated the file first; merge again.
-    if (res.status !== 409 && res.status !== 422) {
-      throw new Error(`GitHub ${res.status}: ${(await res.json()).message}`);
-    }
+    if (res.status !== 409 && res.status !== 422) throw await githubError(res);
   }
   throw new Error("Sync kept conflicting; try again");
 }
 
+// Checks the repo is reachable, then does a real sync, which is the only way
+// to be sure the token can write (GitHub reports the account's access, not the token's).
 export async function testConnection(settings) {
   const res = await fetch(`https://api.github.com/repos/${settings.githubRepo}`, {
     headers: { Authorization: `Bearer ${settings.githubToken}`, Accept: "application/vnd.github+json" },
   });
-  if (!res.ok) throw new Error(res.status === 404 ? "Repo not found (check the name and token access)" : `GitHub ${res.status}`);
+  if (!res.ok) throw await githubError(res);
   const repo = await res.json();
-  if (!repo.permissions?.push) throw new Error("Token can read but not write this repo");
+  await sync(settings);
   return repo;
 }
