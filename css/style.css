@@ -440,6 +440,36 @@ dialog header h2 { color: var(--text); text-transform: none; letter-spacing: 0; 
 .wish-head .total strong { display: block; color: var(--accent); font-size: 20px; }
 .loading { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); padding: 30px 0; }
 
+/* ---------- Deck rating (Commander bracket) ---------- */
+.rating { margin-top: 4px; }
+.rating-head { display: flex; align-items: center; gap: 14px; }
+.bracket-badge {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; width: 64px; height: 64px; flex-shrink: 0;
+  border-radius: 16px; background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent);
+}
+.bracket-badge small { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+.bracket-badge strong { font-size: 28px; line-height: 1; }
+.rating-title { font-size: 18px; font-weight: 700; }
+.rating-sub { font-size: 12.5px; color: var(--muted); }
+.bracket-scale { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-top: 8px; }
+.bracket-scale span { height: 5px; border-radius: 3px; background: var(--surface-3); }
+.bracket-scale span.on { background: var(--accent); }
+.bracket-scale-labels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-top: 4px; font-size: 10.5px; color: var(--faint); text-align: center; }
+.bracket-scale-labels .on { color: var(--text); font-weight: 600; }
+.rating-reasons { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
+.rating-reasons li { display: flex; gap: 8px; align-items: flex-start; }
+.rating-reasons .icon { width: 16px; height: 16px; margin-top: 2px; }
+.rating-reasons .ok .icon { color: var(--accent); }
+.rating-reasons .info .icon { color: var(--muted); }
+.rating-reasons .warn .icon { color: var(--warn); }
+.rating .tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 10px; }
+.rating .attribution { text-align: left; margin-top: 12px; }
+.tile-bracket {
+  position: absolute; top: 10px; left: 10px; z-index: 1; padding: 3px 7px; border-radius: 7px;
+  font-size: 11.5px; font-weight: 700; background: rgba(6, 10, 20, 0.75); border: 1px solid var(--accent-line); color: var(--accent);
+}
+.tag.gc { color: var(--warn); border-color: rgba(245, 185, 66, 0.35); }
+
 /* ---------- Card detail ---------- */
 .card-list li[data-open] { cursor: pointer; }
 .card-list li[data-open]:active { background: var(--surface-2); }

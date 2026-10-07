@@ -151,6 +151,14 @@ export const ownedCopies = (name) => data.inventory.filter((e) => sameName(data.
 export const deckValue = (deckId) =>
   data.inventory.filter((e) => e.deck_id === deckId).reduce((sum, e) => sum + (unitPrice(data.cards[e.scryfall_id], e.foil) ?? 0), 0);
 
+// Names of the cards that count toward the deck (commander included, tokens not).
+export const deckCardList = (deckId) =>
+  data.inventory
+    .filter((e) => e.deck_id === deckId)
+    .map((e) => data.cards[e.scryfall_id])
+    .filter((c) => cardType(c) !== "Token")
+    .map((c) => c.name);
+
 export const deckCardNames = (deckId) =>
   new Set(data.inventory.filter((e) => e.deck_id === deckId).map((e) => data.cards[e.scryfall_id].name.split(" // ")[0].toLowerCase()));
 

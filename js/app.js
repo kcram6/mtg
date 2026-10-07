@@ -6,6 +6,7 @@ import { recognizeCard } from "./recognize.js";
 import { warmUp as warmUpOcr } from "./ocr.js";
 import { resetClient } from "./ai.js";
 import * as edhrec from "./edhrec.js";
+import { estimateBracket, BRACKETS } from "./bracket.js";
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -824,6 +825,7 @@ function renderCollection() {
             ${r.commander ? `<span class="tag commander">${icon("crown")}Commander</span>` : ""}
             ${place === "all" ? deckTag(r.deckId) : ""}
             ${r.foil ? `<span class="tag foil">${icon("sparkle")}Foil</span>` : ""}
+            ${scryfall.bracketListsIfLoaded()?.gameChangers.has(r.card.name) ? `<span class="tag gc">Game Changer</span>` : ""}
             ${r.offIdentity ? `<span class="tag warn">${icon("alert")}Outside commander's colors</span>` : ""}
           </div>
         </div>
@@ -922,8 +924,12 @@ function showDeckList() {
       .map((d) => {
         const cmdrs = store.getCommanders(d.id);
         const lead = cmdrs[0]?.card;
+        const lists = scryfall.bracketListsIfLoaded();
+        const names = store.deckCardList(d.id);
+        const bracket = lists && names.length ? estimateBracket(names, lists).bracket : null;
         return `<button class="deck-tile" data-deck="${d.id}" ${artStyle(lead)}>
           ${lead ? `<div class="tile-art"></div>` : `<div class="tile-empty">${icon("swords")}</div>`}
+          ${bracket ? `<span class="tile-bracket" title="Estimated Commander bracket">B${bracket}</span>` : ""}
           ${lead ? `<div class="tile-pips">${identityPips(sortedIdentity(d.id))}</div>` : ""}
           <div class="tile-body">
             <div class="tile-name">${esc(d.name)}</div>
@@ -933,6 +939,9 @@ function showDeckList() {
         </button>`;
       })
       .join("") + `<button class="deck-tile new" data-new-deck><span>${icon("plus")}New deck</span></button>`;
+  if (!scryfall.bracketListsIfLoaded() && decks.length) {
+    scryfall.bracketLists().then(() => !openDeckId && $("#view-decks").classList.contains("active") && showDeckList(), () => {});
+  }
 }
 
 async function createDeckFlow() {
@@ -985,8 +994,39 @@ function renderDeckPage() {
   document.querySelectorAll(".segmented button").forEach((b) => b.classList.toggle("active", b.dataset.tab === deckTab));
   $("#deck-upgrades").hidden = deckTab !== "upgrades";
   $("#deck-wishlist").hidden = deckTab !== "wishlist";
+  renderRating(deck);
   if (deckTab === "upgrades") renderUpgrades(deck);
   else renderWishlist(deck);
+}
+
+async function renderRating(deck) {
+  const el = $("#deck-rating");
+  const names = store.deckCardList(deck.id);
+  if (!names.length) return (el.innerHTML = "");
+  let lists = scryfall.bracketListsIfLoaded();
+  if (!lists) {
+    el.innerHTML = `<div class="panel rating"><div class="loading">${icon("loader", "spin")}Rating deck…</div></div>`;
+    lists = await scryfall.bracketLists().catch(() => null);
+    if (openDeckId !== deck.id) return;
+    if (!lists) return (el.innerHTML = `<div class="commander-hint">${icon("alert")}<span>Couldn't load the Game Changers list. Try again later.</span></div>`);
+  }
+  const r = estimateBracket(names, lists);
+  const levelIcon = { ok: "check", info: "alert", warn: "alert" };
+  el.innerHTML = `
+    <div class="panel rating">
+      <div class="rating-head">
+        <div class="bracket-badge"><small>Bracket</small><strong>${r.bracket}</strong></div>
+        <div>
+          <div class="rating-title">${r.label}</div>
+          <div class="rating-sub">Estimated Commander bracket</div>
+        </div>
+      </div>
+      <div class="bracket-scale">${[1, 2, 3, 4, 5].map((b) => `<span class="${b <= r.bracket ? "on" : ""}"></span>`).join("")}</div>
+      <div class="bracket-scale-labels">${[1, 2, 3, 4, 5].map((b) => `<span class="${b === r.bracket ? "on" : ""}">${BRACKETS[b]}</span>`).join("")}</div>
+      <ul class="rating-reasons">${r.reasons.map((x) => `<li class="${x.level}">${icon(levelIcon[x.level])}<span>${esc(x.text)}</span></li>`).join("")}</ul>
+      ${r.gameChangers.length ? `<div class="tags">${r.gameChangers.map((n) => `<span class="tag gc">${esc(n)}</span>`).join("")}</div>` : ""}
+      <p class="attribution">Two-card combos aren't checked here; <a href="https://commanderspellbook.com/find-my-combos/" target="_blank" rel="noopener">check them on Commander Spellbook</a>. Brackets are a starting point for the pregame chat: Exhibition vs Core and Optimized vs cEDH come down to intent and speed.</p>
+    </div>`;
 }
 
 document.querySelector(".segmented").addEventListener("click", (e) => {
@@ -1229,6 +1269,7 @@ $("#deck-wishlist").addEventListener("click", (e) => {
 if (restoredFromLink) setTimeout(() => toast("Settings restored from your setup link"), 300);
 renderRecent();
 updateSyncPill();
+scryfall.bracketLists().then(() => $("#view-collection").classList.contains("active") && renderCollection(), () => {});
 syncNow().then(async () => {
   // Cards scanned before mana value / type were stored: fill in their details.
   const missing = store.idsMissingDetails();

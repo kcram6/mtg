@@ -124,6 +124,54 @@ export function tokenNames() {
   return tokenNamesPromise;
 }
 
+// Every card name matching a Scryfall search (follows pagination).
+async function allNames(query, extra = "") {
+  const names = [];
+  let path = `/cards/search?q=${encodeURIComponent(query)}&unique=cards${extra}`;
+  while (path) {
+    const res = await scryfall(path);
+    names.push(...(res?.data ?? []).map((c) => c.name));
+    path = res?.has_more ? res.next_page.replace(BASE, "") : null;
+  }
+  return names;
+}
+
+// Card lists used to estimate a deck's Commander bracket: the official Game
+// Changers, extra-turn cards, and mass land denial (Scryfall's card tags).
+// Cached for a week.
+const BRACKET_KEY = "mtg-bracket-lists";
+let bracketPromise = null, bracketLoaded = null;
+export function bracketLists() {
+  bracketPromise ??= (async () => {
+    let lists = null;
+    try {
+      const cached = JSON.parse(localStorage.getItem(BRACKET_KEY));
+      if (cached && Date.now() - cached.at < 7 * 864e5) lists = cached;
+    } catch {}
+    if (!lists) {
+      lists = {
+        at: Date.now(),
+        gameChangers: await allNames("is:gamechanger"),
+        extraTurns: await allNames("otag:extra-turn f:commander"),
+        massLandDenial: await allNames("otag:mass-land-denial f:commander"),
+      };
+      try {
+        localStorage.setItem(BRACKET_KEY, JSON.stringify(lists));
+      } catch {}
+    }
+    bracketLoaded = {
+      gameChangers: new Set(lists.gameChangers),
+      extraTurns: new Set(lists.extraTurns),
+      massLandDenial: new Set(lists.massLandDenial),
+    };
+    return bracketLoaded;
+  })();
+  bracketPromise.catch(() => (bracketPromise = null));
+  return bracketPromise;
+}
+// The lists if they've already loaded (for tagging cards without waiting).
+export const bracketListsIfLoaded = () => bracketLoaded;
+
 // Name suggestions while typing, tokens included.
 export async function autocomplete(query) {
   const res = await scryfall(`/cards/autocomplete?q=${encodeURIComponent(query)}&include_extras=true`);
