@@ -2,7 +2,7 @@
 // Commander Brackets (Feb 2026 update):
 //   Game Changers: none in 1-2, up to 3 in 3, unlimited in 4-5
 //   Mass land denial: only in 4-5
-//   Extra turns: chaining only in 4-5
+//   Extra turns: chaining only in 4-5 (extra combats aren't limited)
 //   Two-card infinite combos: none in 1-2, not before turn 6 in 3
 // Bracket 1 vs 2 and 4 vs 5 depend on intent and speed, which cards can't
 // show, so a deck with nothing flagged is rated 2 and anything above 3 is 4.
@@ -16,6 +16,7 @@ export function estimateBracket(cardNames, lists) {
   const gameChangers = names.filter((n) => lists.gameChangers.has(n)).sort();
   const extraTurns = names.filter((n) => lists.extraTurns.has(n)).sort();
   const massLandDenial = names.filter((n) => lists.massLandDenial.has(n)).sort();
+  const extraCombats = names.filter((n) => lists.extraCombats?.has(n)).sort();
 
   let bracket = 2;
   const reasons = [];
@@ -42,5 +43,14 @@ export function estimateBracket(cardNames, lists) {
     reasons.push({ level: "info", text: `${plural(extraTurns.length, "extra-turn card")} (${extraTurns.join(", ")}). Fine below Bracket 4 if you don't chain them.` });
   } else reasons.push({ level: "ok", text: "No extra-turn cards" });
 
-  return { bracket, label: BRACKETS[bracket], gameChangers, extraTurns, massLandDenial, reasons };
+  // Extra combats are easy to mistake for extra turns, but no bracket limits
+  // them, so they're listed for information only.
+  if (extraCombats.length) {
+    reasons.push({
+      level: "info",
+      text: `${plural(extraCombats.length, "extra-combat card")} (${extraCombats.join(", ")}). Brackets don't limit extra combats, only extra turns.`,
+    });
+  }
+
+  return { bracket, label: BRACKETS[bracket], gameChangers, extraTurns, massLandDenial, extraCombats, reasons };
 }

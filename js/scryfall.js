@@ -140,7 +140,7 @@ async function allNames(query, extra = "") {
 // Card lists used to estimate a deck's Commander bracket: the official Game
 // Changers, extra-turn cards, and mass land denial (Scryfall's card tags).
 // Cached for a week.
-const BRACKET_KEY = "mtg-bracket-lists";
+const BRACKET_KEY = "mtg-bracket-lists-v2"; // v2 adds extra combats
 let bracketPromise = null, bracketLoaded = null;
 export function bracketLists() {
   bracketPromise ??= (async () => {
@@ -155,6 +155,7 @@ export function bracketLists() {
         gameChangers: await allNames("is:gamechanger"),
         extraTurns: await allNames("otag:extra-turn f:commander"),
         massLandDenial: await allNames("otag:mass-land-denial f:commander"),
+        extraCombats: await allNames("otag:extra-combat f:commander"),
       };
       try {
         localStorage.setItem(BRACKET_KEY, JSON.stringify(lists));
@@ -164,6 +165,7 @@ export function bracketLists() {
       gameChangers: new Set(lists.gameChangers),
       extraTurns: new Set(lists.extraTurns),
       massLandDenial: new Set(lists.massLandDenial),
+      extraCombats: new Set(lists.extraCombats ?? []),
     };
     return bracketLoaded;
   })();
