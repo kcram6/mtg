@@ -43,7 +43,8 @@ The token and key are stored **only in that browser** (localStorage). They're ne
 - Good, even lighting, with no glare across the name bar or bottom-left corner.
 - Fill the frame with the card.
 - Set the **Foil** toggle before scanning a run of foils.
-- Each card is logged once while you hold it. To log a second copy, move the card away and back.
+- Before scanning, choose where the cards go: an existing deck, a new deck, or Extras / Uncategorized.
+- Scanning the same card twice in a row is treated as an accident and isn't logged again. Tap **+1** on the card to add a real second copy.
 - Sync happens automatically about 20 seconds after your last scan, or tap the sync pill at the top.
 
 ## Running locally
@@ -55,5 +56,7 @@ Then open http://localhost:8000. The camera works on `localhost`. On a phone you
 
 ## Roadmap
 - [x] Camera scanning, collection and prices
-- [ ] Commander decks: assign copies to decks, check color identity
+- [x] Decks: choose a deck (or Extras) before scanning, move cards, rename/delete decks
+- [x] Card types and mana values, with type filters and a mana curve per deck
+- [ ] Commander details: set a deck's commander, check color identity
 - [ ] Recommendations: EDHREC staples for your commander, highlighting cards you already own

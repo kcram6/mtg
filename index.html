@@ -4,47 +4,106 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#14161c">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#060a14">
   <title>MTG Collection</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🃏</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23060a14'/%3E%3Crect x='11' y='6' width='13' height='18' rx='2.5' fill='none' stroke='%232fd28a' stroke-width='2' transform='rotate(12 17 15)'/%3E%3Crect x='7' y='8' width='13' height='18' rx='2.5' fill='%23060a14' stroke='%232fd28a' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
-  <header>
-    <h1>MTG Collection</h1>
-    <button id="sync-status" class="pill" title="Sync with GitHub">Not synced</button>
+  <!-- Icons (Lucide, ISC license), referenced with <use href="#i-name"> -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"/></symbol>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></symbol>
+    <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></symbol>
+    <symbol id="i-cloud-check" viewBox="0 0 24 24"><path d="m17 15-5.5 5.5L9 18"/><path d="M5 17.74A7 7 0 1 1 15.71 10h1.79a4.5 4.5 0 0 1 1.5 8.74"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></symbol>
+    <symbol id="i-cloud-off" viewBox="0 0 24 24"><path d="m2 2 20 20"/><path d="M5.78 5.78A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.31-.19"/><path d="M21.53 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7 7 0 0 0 10 5.07"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+    <symbol id="i-loader" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+    <symbol id="i-swords" viewBox="0 0 24 24"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/><path d="M14.5 6.5 18 3h3v3l-3.5 3.5"/><path d="m5 14 4 4"/><path d="m7 17-3 3"/><path d="m3 19 2 2"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-logo" viewBox="0 0 24 24"><rect x="8" y="3" width="11" height="15" rx="2" transform="rotate(12 13.5 10.5)"/><rect x="4.5" y="5.5" width="11" height="15" rx="2" fill="var(--bg)"/></symbol>
+  </svg>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"><svg class="icon"><use href="#i-logo"/></svg></span>
+      <span class="brand-name">MTG Collection</span>
+    </div>
+    <button id="sync-status" class="pill" title="Sync with GitHub"></button>
   </header>
 
   <main>
     <!-- Scan -->
     <section id="view-scan" class="view active">
+      <button id="dest-btn" class="dest">
+        <span class="dest-icon"><svg class="icon"><use href="#i-inbox"/></svg></span>
+        <span class="dest-text"><small>Scanning into</small><strong id="dest-name">Extras / Uncategorized</strong></span>
+        <svg class="icon chev"><use href="#i-chevron"/></svg>
+      </button>
+
       <div id="camera">
         <video id="video" playsinline muted></video>
         <div id="guide"></div>
         <div id="flash"></div>
-        <div id="camera-status">Tap “Start camera” to begin</div>
-        <button id="start-camera" class="primary big">Start camera</button>
+        <div id="camera-status">Choose where cards go, then start scanning</div>
+        <button id="start-camera" class="btn primary big"><svg class="icon"><use href="#i-camera"/></svg>Start scanning</button>
       </div>
-      <div class="controls">
-        <label class="toggle"><input type="checkbox" id="auto" checked> Auto-scan</label>
-        <label class="toggle"><input type="checkbox" id="foil"> Foil</label>
-        <button id="scan-now">Scan now</button>
+
+      <div class="toolbar">
+        <label class="switch"><input type="checkbox" id="auto" checked><span class="track"></span>Auto</label>
+        <label class="switch"><input type="checkbox" id="foil"><span class="track"></span>Foil</label>
+        <button id="scan-now" class="btn primary"><svg class="icon"><use href="#i-scan"/></svg>Scan now</button>
       </div>
-      <h2>Just scanned <span id="session-count" class="muted"></span></h2>
+
+      <div class="section-head"><h2>Just scanned</h2><span id="session-count" class="count"></span></div>
       <ul id="recent" class="card-list"></ul>
     </section>
 
     <!-- Collection -->
     <section id="view-collection" class="view">
-      <div class="summary">
-        <div><strong id="total-cards">0</strong><span>cards</span></div>
-        <div><strong id="total-value">$0.00</strong><span>value (TCGplayer)</span></div>
+      <div id="deck-filter" class="chips"></div>
+      <div id="deck-head" class="deck-head" hidden>
+        <h2 id="deck-title"></h2>
+        <button id="rename-deck" class="btn ghost icon-only" title="Rename deck" aria-label="Rename deck"><svg class="icon"><use href="#i-pencil"/></svg></button>
+        <button id="delete-deck" class="btn ghost icon-only danger" title="Delete deck" aria-label="Delete deck"><svg class="icon"><use href="#i-trash"/></svg></button>
       </div>
-      <div class="controls">
-        <input id="search" type="search" placeholder="Search your cards…">
-        <button id="refresh-prices">Refresh prices</button>
+      <div id="curve" class="panel curve" hidden>
+        <div class="curve-head"><h2>Mana curve</h2><span id="curve-readout" class="curve-readout"></span></div>
+        <div class="curve-plot">
+          <span id="curve-max" class="curve-max"></span>
+          <div id="curve-bars" class="curve-bars" role="img"></div>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><span class="stat-label">Cards</span><strong id="total-cards">0</strong></div>
+        <div class="stat"><span class="stat-label">Value · TCGplayer</span><strong id="total-value" class="accent">$0.00</strong></div>
+      </div>
+      <div id="type-filter" class="chips"></div>
+      <div class="toolbar">
+        <label class="search"><svg class="icon"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Search cards"></label>
+        <button id="refresh-prices" class="btn icon-only" title="Refresh prices"><svg class="icon"><use href="#i-refresh"/></svg></button>
       </div>
       <ul id="collection" class="card-list"></ul>
     </section>
@@ -52,44 +111,60 @@
     <!-- Settings -->
     <section id="view-settings" class="view">
       <form id="settings-form">
-        <h2>Card reading</h2>
-        <label>Reader
-          <select name="readerMode">
-            <option value="free-first">Free OCR first, Claude only if needed</option>
-            <option value="ai">Claude every scan (more accurate)</option>
-          </select>
-        </label>
-        <label>Anthropic API key <small>(stored only on this device)</small>
-          <input name="anthropicKey" type="password" autocomplete="off" placeholder="sk-ant-…">
-        </label>
-
-        <h2>GitHub sync</h2>
-        <label>Data repo <small>(a private repo, e.g. yourname/mtg-data)</small>
-          <input name="githubRepo" autocomplete="off" placeholder="yourname/mtg-data">
-        </label>
-        <label>GitHub token <small>(fine-grained, “Contents: read and write” on that repo only)</small>
-          <input name="githubToken" type="password" autocomplete="off" placeholder="github_pat_…">
-        </label>
-        <div class="controls">
-          <button type="submit" class="primary">Save</button>
-          <button type="button" id="test-github">Test GitHub</button>
-          <button type="button" id="export">Download backup</button>
+        <div class="panel">
+          <h2>Card reading</h2>
+          <label>Reader
+            <select name="readerMode">
+              <option value="free-first">Free OCR first, Claude only when needed</option>
+              <option value="ai">Claude every scan (most accurate)</option>
+            </select>
+          </label>
+          <label>Anthropic API key <small>Stored only on this device</small>
+            <input name="anthropicKey" type="password" autocomplete="off" placeholder="sk-ant-…">
+          </label>
+        </div>
+        <div class="panel">
+          <h2>GitHub sync</h2>
+          <label>Data repo <small>A private repo, e.g. yourname/mtg-data</small>
+            <input name="githubRepo" autocomplete="off" placeholder="yourname/mtg-data">
+          </label>
+          <label>GitHub token <small>Fine-grained, Contents read &amp; write on that repo only</small>
+            <input name="githubToken" type="password" autocomplete="off" placeholder="github_pat_…">
+          </label>
+        </div>
+        <div class="toolbar">
+          <button type="submit" class="btn primary">Save</button>
+          <button type="button" id="test-github" class="btn">Test GitHub</button>
+          <button type="button" id="export" class="btn ghost"><svg class="icon"><use href="#i-download"/></svg>Backup</button>
         </div>
         <p id="settings-msg" class="muted"></p>
       </form>
     </section>
   </main>
 
-  <nav>
-    <button data-view="scan" class="active">📷<span>Scan</span></button>
-    <button data-view="collection">🗂️<span>Collection</span></button>
-    <button data-view="settings">⚙️<span>Settings</span></button>
+  <nav class="tabbar">
+    <button data-view="scan" class="active"><svg class="icon"><use href="#i-camera"/></svg><span>Scan</span></button>
+    <button data-view="collection"><svg class="icon"><use href="#i-layers"/></svg><span>Collection</span></button>
+    <button data-view="settings"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></button>
   </nav>
 
-  <dialog id="printing-dialog">
+  <!-- Choose a deck (scan destination / move cards) -->
+  <dialog id="deck-dialog" class="sheet">
+    <header>
+      <h2 id="deck-dialog-title">Where are these cards going?</h2>
+      <button class="btn icon-only ghost" data-close aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+    </header>
+    <ul id="deck-options" class="options"></ul>
+    <form id="new-deck-form" class="new-deck">
+      <input id="new-deck-name" placeholder="New deck name, e.g. Atraxa Superfriends" autocomplete="off" required>
+      <button class="btn primary"><svg class="icon"><use href="#i-plus"/></svg>Create</button>
+    </form>
+  </dialog>
+
+  <dialog id="printing-dialog" class="sheet">
     <header>
       <h2>Choose printing</h2>
-      <button id="close-dialog" aria-label="Close">✕</button>
+      <button class="btn icon-only ghost" data-close aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
     </header>
     <div id="printing-grid"></div>
   </dialog>

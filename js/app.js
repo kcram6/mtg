@@ -9,6 +9,17 @@ import { resetClient } from "./ai.js";
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const money = (n) => (n == null ? "—" : `$${n.toFixed(2)}`);
+const icon = (name, cls = "") => `<svg class="icon ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+
+// Mana cost like "{2}{W}{U/P}" rendered with Scryfall's symbol images.
+const manaCost = (cost) =>
+  (cost?.match(/\{[^}]+\}/g) ?? [])
+    .map((sym) => `<img class="mana" src="https://svgs.scryfall.io/card-symbols/${encodeURIComponent(sym.slice(1, -1).replace(/\//g, ""))}.svg" alt="${esc(sym)}">`)
+    .join("");
+
+const deckLabel = (deckId) => store.getDeck(deckId)?.name ?? "Extras";
+const deckTag = (deckId) =>
+  `<span class="tag ${deckId && store.getDeck(deckId) ? "deck" : ""}">${icon(store.getDeck(deckId) ? "swords" : "inbox")}${esc(deckLabel(deckId))}</span>`;
 
 // ---------- Settings ----------
 const SETTINGS_KEY = "mtg-settings";
@@ -16,6 +27,7 @@ let settings = { readerMode: "free-first", anthropicKey: "", githubRepo: "", git
 
 const form = $("#settings-form");
 for (const [k, v] of Object.entries(settings)) if (form.elements[k]) form.elements[k].value = v;
+const settingsMsg = (html) => ($("#settings-msg").innerHTML = html);
 
 form.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -23,18 +35,17 @@ form.addEventListener("submit", (e) => {
   settings.githubRepo = settings.githubRepo.trim().replace(/^https:\/\/github\.com\//, "").replace(/\/$/, "");
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   resetClient();
-  $("#settings-msg").textContent = "Saved.";
+  settingsMsg(`${icon("check", "accent")}Saved`);
   syncNow();
 });
 
 $("#test-github").addEventListener("click", async () => {
-  const msg = $("#settings-msg");
-  msg.textContent = "Checking…";
+  settingsMsg(`${icon("loader", "spin")}Checking…`);
   try {
     const repo = await github.testConnection({ ...settings, ...Object.fromEntries(new FormData(form)) });
-    msg.textContent = `✅ Connected to ${repo.full_name}${repo.private ? " (private)" : " — warning: this repo is public"}`;
+    settingsMsg(`${icon("check", "accent")}Connected to ${esc(repo.full_name)}${repo.private ? " (private)" : " (warning: this repo is public)"}`);
   } catch (err) {
-    msg.textContent = `❌ ${err.message}`;
+    settingsMsg(`${icon("alert")}${esc(err.message)}`);
   }
 });
 
@@ -51,41 +62,43 @@ $("#export").addEventListener("click", () => {
 // ---------- Navigation ----------
 function showView(name) {
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
-  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
+  document.querySelectorAll(".tabbar button").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
   if (name !== "scan" && scanner.running) stopCamera();
   if (name === "collection") renderCollection();
 }
-document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
+document.querySelectorAll(".tabbar button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 
-function toast(text, ms = 3000) {
+function toast(text, iconName = "check", ms = 3000) {
   const t = $("#toast");
-  t.textContent = text;
+  t.innerHTML = `${icon(iconName)}<span>${esc(text)}</span>`;
   t.classList.add("show");
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => t.classList.remove("show"), ms);
 }
 
+document.querySelectorAll("dialog [data-close]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
+
 // ---------- GitHub sync ----------
 let syncing = false, syncTimer = null;
 const configured = () => settings.githubRepo && settings.githubToken;
 
-function renderSyncStatus(state, text) {
+function renderSyncStatus(state, text, iconName) {
   const pill = $("#sync-status");
   pill.className = `pill ${state}`;
-  pill.textContent = text;
+  pill.innerHTML = `${icon(iconName, iconName === "loader" ? "spin" : "")}<span>${esc(text)}</span>`;
 }
 
 function updateSyncPill() {
   if (syncing) return;
-  if (!configured()) return renderSyncStatus("pending", "Sync off");
-  if (store.changeCount > 0) renderSyncStatus("pending", `${store.changeCount} unsynced`);
-  else renderSyncStatus("ok", "Synced ✓");
+  if (!configured()) return renderSyncStatus("", "Sync off", "cloud-off");
+  if (store.changeCount > 0) renderSyncStatus("pending", `${store.changeCount} unsynced`, "cloud");
+  else renderSyncStatus("ok", "Synced", "cloud-check");
 }
 
 async function syncNow() {
   if (!configured() || syncing) return updateSyncPill();
   syncing = true;
-  renderSyncStatus("pending", "Syncing…");
+  renderSyncStatus("pending", "Syncing", "loader");
   try {
     await github.sync(settings);
     syncing = false;
@@ -93,8 +106,8 @@ async function syncNow() {
     if ($("#view-collection").classList.contains("active")) renderCollection();
   } catch (err) {
     syncing = false;
-    renderSyncStatus("error", "Sync failed");
-    toast(err.message, 5000);
+    renderSyncStatus("error", "Sync failed", "alert");
+    toast(err.message, "alert", 5000);
   }
 }
 
@@ -109,7 +122,69 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden" && store.changeCount > 0) syncNow();
 });
 
-// ---------- Sounds ----------
+// ---------- Deck picker ----------
+// Resolves to a deck id, null for Extras, or undefined if dismissed.
+function chooseDeck({ title, current }) {
+  const dialog = $("#deck-dialog");
+  $("#deck-dialog-title").textContent = title;
+  const options = [{ id: null, name: "Extras / Uncategorized", count: store.extrasCount(), iconName: "inbox" }].concat(
+    store.getDecks().map((d) => ({ ...d, iconName: "swords" })),
+  );
+  $("#deck-options").innerHTML = options
+    .map(
+      (o, i) => `<li><button data-i="${i}" class="${o.id === current ? "selected" : ""}">
+        <span class="opt-icon">${icon(o.iconName)}</span>
+        <span class="opt-name">${esc(o.name)}</span>
+        <span class="opt-count">${o.count} card${o.count === 1 ? "" : "s"}</span>
+        ${o.id === current ? icon("check", "check") : ""}
+      </button></li>`,
+    )
+    .join("");
+  $("#new-deck-name").value = "";
+  dialog.showModal();
+
+  return new Promise((resolve) => {
+    let result;
+    $("#deck-options").onclick = (e) => {
+      const btn = e.target.closest("button[data-i]");
+      if (!btn) return;
+      result = options[btn.dataset.i].id;
+      dialog.close();
+    };
+    $("#new-deck-form").onsubmit = (e) => {
+      e.preventDefault();
+      const name = $("#new-deck-name").value.trim();
+      if (!name) return;
+      result = store.createDeck(name).id;
+      toast(`Created deck “${name}”`);
+      dialog.close();
+    };
+    dialog.addEventListener("close", () => resolve(result), { once: true });
+  });
+}
+
+// ---------- Scan destination ----------
+let destination = localStorage.getItem("mtg-destination") || null;
+if (!store.getDeck(destination)) destination = null;
+
+function setDestination(deckId) {
+  destination = deckId;
+  localStorage.setItem("mtg-destination", deckId ?? "");
+  const deck = store.getDeck(deckId);
+  $("#dest-name").textContent = deck ? deck.name : "Extras / Uncategorized";
+  $("#dest-btn .dest-icon").innerHTML = icon(deck ? "swords" : "inbox");
+}
+setDestination(destination);
+
+async function pickDestination() {
+  const choice = await chooseDeck({ title: "Where are these cards going?", current: destination });
+  if (choice === undefined) return false;
+  setDestination(choice);
+  return true;
+}
+$("#dest-btn").addEventListener("click", pickDestination);
+
+// ---------- Feedback ----------
 let audio = null;
 function beep(ok) {
   if (!audio) return;
@@ -141,21 +216,27 @@ function flash(kind) {
   }
 }
 
+const STATUS_ICONS = { ok: "check", bad: "alert", warn: "alert", busy: "loader" };
+function setStatus(text, kind = "") {
+  const el = $("#camera-status");
+  el.className = kind;
+  el.innerHTML = `${STATUS_ICONS[kind] ? icon(STATUS_ICONS[kind], kind === "busy" ? "spin" : "") : ""}<span>${esc(text)}</span>`;
+}
+
 // ---------- Scanning ----------
 const recent = []; // this session's scans, newest first
-const setStatus = (text) => ($("#camera-status").textContent = text);
 
 const scanner = new Scanner({
   container: $("#camera"),
   video: $("#video"),
   guide: $("#guide"),
-  onStatus: setStatus,
+  onStatus: (text) => setStatus(text),
   onCapture: handleCapture,
 });
 
 async function handleCapture(cardCanvas) {
   $("#guide").className = "busy";
-  setStatus("Reading card…");
+  setStatus("Reading card…", "busy");
   try {
     const result = await recognizeCard(cardCanvas, { mode: settings.readerMode, apiKey: settings.anthropicKey });
     if (result.status !== "found") {
@@ -163,28 +244,40 @@ async function handleCapture(cardCanvas) {
       beep(false);
       setStatus(
         settings.anthropicKey
-          ? "No card recognized. Fill the frame with the card and avoid glare."
-          : "No card recognized. Adjust the card and tap Scan now (or add an API key in Settings for AI backup).",
+          ? "No card recognized. Fill the frame and avoid glare."
+          : "No card recognized. Adjust and tap Scan now, or add an API key for AI backup.",
+        "bad",
       );
       return false;
     }
-    const foil = $("#foil").checked;
-    const entry = store.addCopy(result.card, { foil });
+
+    // Scanning the card that was just logged is almost always an accidental
+    // re-scan, so don't log it again; the +1 button adds a real second copy.
+    const last = recent.find((r) => !r.undone);
+    const lastCard = last && store.getCard(store.getEntry(last.entryId)?.scryfall_id);
+    if (lastCard && lastCard.name === result.card.name) {
+      flash("warn");
+      setStatus(`Already logged ${scryfall.frontName(result.card)}. Another copy? Tap +1 below.`, "warn");
+      return true;
+    }
+
+    const entry = store.addCopy(result.card, { foil: $("#foil").checked, deckId: destination });
     recent.unshift({ entryId: entry.id, via: result.via, exact: result.exact, undone: false });
     flash("ok");
     beep(true);
-    setStatus(`✅ ${scryfall.frontName(result.card)} logged. Next card!`);
+    setStatus(`${scryfall.frontName(result.card)} added to ${deckLabel(destination)}`, "ok");
     renderRecent();
     return true;
   } catch (err) {
     flash("bad");
     beep(false);
-    setStatus(`Error: ${err.message}`);
+    setStatus(`Error: ${err.message}`, "bad");
     return true; // don't treat as an empty scene; the user can tap Scan now to retry
   }
 }
 
 async function startCamera() {
+  if (!(await pickDestination())) return;
   audio ??= new AudioContext();
   warmUpOcr();
   scryfall.cardNames().catch(() => {}); // preload the name list used for matching
@@ -193,7 +286,7 @@ async function startCamera() {
     $("#start-camera").hidden = true;
     setStatus("Hold a card inside the frame");
   } catch (err) {
-    setStatus(`Camera unavailable: ${err.message}`);
+    setStatus(`Camera unavailable: ${err.message}`, "bad");
   }
 }
 
@@ -209,70 +302,86 @@ $("#scan-now").addEventListener("click", () => (scanner.running ? scanner.captur
 
 function renderRecent() {
   const live = recent.filter((r) => !r.undone).length;
-  $("#session-count").textContent = live ? `(${live} this session)` : "";
+  $("#session-count").textContent = live ? `${live} this session` : "";
+  if (!recent.length) {
+    $("#recent").innerHTML = `<li class="empty">Scanned cards will show up here</li>`;
+    return;
+  }
   $("#recent").innerHTML = recent
     .map((r, i) => {
       const entry = store.getEntry(r.entryId);
       if (!entry && !r.undone) return "";
       const card = store.getCard(entry?.scryfall_id) ?? r.card;
       r.card = card; // keep for display after undo
-      const price = store.unitPrice(card, entry?.foil ?? r.foil);
+      const foil = entry?.foil ?? r.foil;
       return `
         <li class="${r.undone ? "undone" : ""}">
           <img src="${esc(card.image_small)}" alt="" loading="lazy">
           <div class="info">
-            <div class="name">${esc(card.name)}${entry?.foil ? '<span class="badge foil">foil</span>' : ""}</div>
-            <div class="meta">${esc(card.set_name)} · #${esc(card.collector_number)}
-              ${r.exact ? "" : '<span class="badge warn">printing guessed</span>'}
-              <span class="badge">${r.via === "ai" ? "AI" : "free OCR"}</span></div>
-            ${r.undone ? "" : `<div class="actions">
-              <button data-undo="${i}">Undo</button>
-              <button data-reprint="${i}">Change printing</button>
-              <button data-foil="${i}">${entry.foil ? "Not foil" : "Foil"}</button>
-            </div>`}
+            <div class="name">${esc(card.name)}</div>
+            <div class="meta">${manaCost(card.mana_cost)} ${esc(store.cardType(card))} · ${esc(card.set_name)} #${esc(card.collector_number)}</div>
+            <div class="tags">
+              ${deckTag(entry?.deck_id ?? r.deckId)}
+              ${foil ? `<span class="tag foil">${icon("sparkle")}Foil</span>` : ""}
+              ${r.exact ? "" : `<span class="tag warn">${icon("alert")}Printing guessed</span>`}
+              <span class="tag">${r.via === "ai" ? "AI" : "Free OCR"}</span>
+            </div>
           </div>
-          <div class="price">${money(price)}</div>
+          <div class="price">${money(store.unitPrice(card, foil))}</div>
+          ${r.undone ? "" : `<div class="actions">
+            <button class="btn sm" data-undo="${i}">${icon("undo")}Undo</button>
+            <button class="btn sm" data-plus="${i}">${icon("plus")}1</button>
+            <button class="btn sm" data-move="${i}">${icon("swords")}Move</button>
+            <button class="btn sm" data-reprint="${i}">${icon("swap")}Printing</button>
+            <button class="btn sm" data-foil="${i}">${icon("sparkle")}${foil ? "Not foil" : "Foil"}</button>
+          </div>`}
         </li>`;
     })
     .join("");
 }
 
-$("#recent").addEventListener("click", (e) => {
+$("#recent").addEventListener("click", async (e) => {
   const btn = e.target.closest("button");
   if (!btn) return;
-  const r = recent[btn.dataset.undo ?? btn.dataset.reprint ?? btn.dataset.foil];
+  const d = btn.dataset;
+  const r = recent[d.undo ?? d.plus ?? d.move ?? d.reprint ?? d.foil];
   const entry = store.getEntry(r.entryId);
-  if (btn.dataset.undo) {
-    r.foil = entry.foil;
+  if (d.plus) {
+    const copy = store.addAnotherCopy(r.entryId);
+    recent.unshift({ ...r, entryId: copy.id });
+    flash("ok");
+    beep(true);
+    setStatus(`Another ${store.getCard(copy.scryfall_id).name} added`, "ok");
+  } else if (d.undo) {
+    Object.assign(r, { foil: entry.foil, deckId: entry.deck_id, undone: true });
     store.removeCopy(r.entryId);
-    r.undone = true;
-    renderRecent();
-  } else if (btn.dataset.reprint) {
+  } else if (d.move) {
+    const deckId = await chooseDeck({ title: "Move to…", current: entry.deck_id });
+    if (deckId !== undefined) store.moveCopies([r.entryId], deckId);
+  } else if (d.reprint) {
     pickPrinting(store.getCard(entry.scryfall_id).name, (card) => {
       store.changePrinting([r.entryId], card);
       r.exact = true;
       renderRecent();
     });
-  } else if (btn.dataset.foil) {
+  } else if (d.foil) {
     store.setFoil(r.entryId, !entry.foil);
-    renderRecent();
   }
+  renderRecent();
 });
 
 // ---------- Printing picker ----------
-const dialog = $("#printing-dialog");
-$("#close-dialog").addEventListener("click", () => dialog.close());
-
 async function pickPrinting(name, onPick) {
-  const grid = $("#printing-grid");
-  grid.innerHTML = '<p class="muted">Loading printings…</p>';
+  const dialog = $("#printing-dialog"), grid = $("#printing-grid");
+  grid.innerHTML = `<p class="muted">${icon("loader", "spin")} Loading printings…</p>`;
   dialog.showModal();
   const prints = await scryfall.printings(name);
   grid.innerHTML = prints
     .map((p, i) => {
       const img = p.image_uris?.small ?? p.card_faces?.[0]?.image_uris?.small;
+      const price = p.prices.usd ? `$${p.prices.usd}` : p.prices.usd_foil ? `$${p.prices.usd_foil} foil` : "—";
       return `<button data-i="${i}"><img src="${esc(img)}" alt="" loading="lazy">
-        <span>${esc(p.set_name)}</span><span class="muted">${esc(p.set.toUpperCase())} #${esc(p.collector_number)} · ${p.prices.usd ? "$" + p.prices.usd : p.prices.usd_foil ? "$" + p.prices.usd_foil + " foil" : "—"}</span></button>`;
+        <span>${esc(p.set_name)}</span><span class="muted">${esc(p.set.toUpperCase())} #${esc(p.collector_number)} · ${price}</span></button>`;
     })
     .join("");
   grid.onclick = (e) => {
@@ -284,68 +393,190 @@ async function pickPrinting(name, onPick) {
 }
 
 // ---------- Collection ----------
+let place = "all"; // "all", "extras", or a deck id
+let typeFilter = "all";
+
+function renderPlaceChips() {
+  const chips = [
+    { id: "all", label: "All", iconName: "layers" },
+    { id: "extras", label: "Extras", iconName: "inbox" },
+    ...store.getDecks().map((d) => ({ id: d.id, label: d.name, iconName: "swords" })),
+  ];
+  $("#deck-filter").innerHTML =
+    chips.map((c) => `<button class="chip ${c.id === place ? "active" : ""}" data-place="${esc(c.id)}">${icon(c.iconName)}${esc(c.label)}</button>`).join("") +
+    `<button class="chip" data-new-deck>${icon("plus")}New deck</button>`;
+}
+
+function renderTypeChips(typeCounts) {
+  const types = scryfall.CARD_TYPES.concat("Other").filter((t) => typeCounts[t]);
+  const total = Object.values(typeCounts).reduce((a, b) => a + b, 0);
+  $("#type-filter").innerHTML = total
+    ? [["all", "All types", total], ...types.map((t) => [t, t, typeCounts[t]])]
+        .map(([id, label, n]) => `<button class="chip small ${id === typeFilter ? "active" : ""}" data-type="${id}">${label} <span class="n">${n}</span></button>`)
+        .join("")
+    : "";
+}
+
+function renderCurve() {
+  const deck = store.getDeck(place);
+  $("#curve").hidden = !deck;
+  if (!deck) return;
+  const { buckets, total, average } = store.manaCurve(place);
+  const max = Math.max(...buckets, 1);
+  const summary = total ? `Avg ${average.toFixed(2)} · ${total} non-land card${total === 1 ? "" : "s"}` : "No non-land cards yet";
+  $("#curve-readout").textContent = summary;
+  $("#curve-max").textContent = total ? max : "";
+  $("#curve-bars").setAttribute("aria-label", `Mana curve: ${buckets.map((n, i) => `${i === 7 ? "7+" : i} mana ${n}`).join(", ")}`);
+  $("#curve-bars").innerHTML = buckets
+    .map((n, i) => {
+      const label = i === 7 ? "7+" : String(i);
+      return `<button class="curve-col" data-readout="${label} mana · ${n} card${n === 1 ? "" : "s"}">
+        <span class="bar-wrap"><span class="bar" style="height:${(n / max) * 100}%"></span></span>
+        <span class="mv">${label}</span>
+      </button>`;
+    })
+    .join("");
+  const bars = $("#curve-bars");
+  const show = (e) => {
+    const col = e.target.closest(".curve-col");
+    bars.querySelectorAll(".curve-col").forEach((c) => c.classList.toggle("hot", c === col));
+    $("#curve-readout").textContent = col ? col.dataset.readout : summary;
+  };
+  bars.onpointerover = bars.onfocusin = bars.onclick = show;
+  bars.onpointerleave = () => show({ target: document.body });
+}
+
 function renderCollection() {
-  const { rows, totalCards, totalValue } = store.getCollection();
+  if (place !== "all" && place !== "extras" && !store.getDeck(place)) place = "all";
+  renderPlaceChips();
+
+  const deck = store.getDeck(place);
+  $("#deck-head").hidden = !deck;
+  if (deck) $("#deck-title").textContent = deck.name;
+  renderCurve();
+
+  const { rows, totalCards, totalValue, typeCounts } = store.getCollection(place, typeFilter);
+  if (typeFilter !== "all" && !typeCounts[typeFilter]) typeFilter = "all";
+  renderTypeChips(typeCounts);
   $("#total-cards").textContent = totalCards;
   $("#total-value").textContent = money(totalValue);
 
   const q = $("#search").value.trim().toLowerCase();
-  const shown = q
-    ? rows.filter((r) => `${r.card.name} ${r.card.set_name} ${r.card.type_line}`.toLowerCase().includes(q))
-    : rows;
+  const shown = q ? rows.filter((r) => `${r.card.name} ${r.card.set_name} ${r.card.type_line}`.toLowerCase().includes(q)) : rows;
 
   $("#collection").innerHTML = shown.length
     ? shown
-        .map((r, i) => `
+        .map(
+          (r, i) => `
       <li>
         <img src="${esc(r.card.image_small)}" alt="" loading="lazy">
         <div class="info">
-          <div class="name"><span class="qty">${r.entryIds.length}×</span>${esc(r.card.name)}${r.foil ? '<span class="badge foil">foil</span>' : ""}</div>
-          <div class="meta">${esc(r.card.set_name)} · #${esc(r.card.collector_number)} · ${esc(r.card.rarity)}</div>
-          <div class="actions">
-            <button data-remove="${i}">Remove one</button>
-            <button data-reprint="${i}">Change printing</button>
-            ${r.card.tcgplayer_url ? `<a href="${esc(r.card.tcgplayer_url)}" target="_blank" rel="noopener">TCGplayer ↗</a>` : ""}
+          <div class="name"><span class="qty">${r.entryIds.length}×</span>${esc(r.card.name)}</div>
+          <div class="meta">${manaCost(r.card.mana_cost)} ${esc(r.card.type_line)}</div>
+          <div class="meta">${esc(r.card.set_name)} #${esc(r.card.collector_number)} · ${esc(r.card.rarity)}</div>
+          <div class="tags">
+            ${place === "all" ? deckTag(r.deckId) : ""}
+            ${r.foil ? `<span class="tag foil">${icon("sparkle")}Foil</span>` : ""}
           </div>
         </div>
-        <div class="price">${money(r.unitPrice)}<div class="meta">${r.entryIds.length > 1 ? money((r.unitPrice ?? 0) * r.entryIds.length) : ""}</div></div>
-      </li>`)
+        <div class="price">${money(r.unitPrice)}${r.entryIds.length > 1 ? `<small>${money((r.unitPrice ?? 0) * r.entryIds.length)}</small>` : ""}</div>
+        <div class="actions">
+          <button class="btn sm" data-remove="${i}">${icon("minus")}Remove</button>
+          <button class="btn sm" data-move="${i}">${icon("swords")}Move</button>
+          <button class="btn sm" data-reprint="${i}">${icon("swap")}Printing</button>
+          ${r.card.tcgplayer_url ? `<a class="btn sm" href="${esc(r.card.tcgplayer_url)}" target="_blank" rel="noopener">${icon("external")}TCGplayer</a>` : ""}
+        </div>
+      </li>`,
+        )
         .join("")
-    : `<p class="muted">${rows.length ? "No matches." : "No cards yet. Head to Scan to add some!"}</p>`;
+    : `<li class="empty">${rows.length ? "No matches" : deck ? "No cards in this deck yet. Choose it when you start scanning." : "No cards yet. Head to Scan to add some."}</li>`;
 
-  $("#collection").onclick = (e) => {
+  $("#collection").onclick = async (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
-    const r = shown[btn.dataset.remove ?? btn.dataset.reprint];
-    if (btn.dataset.remove) {
-      store.removeOneOf(r.card.scryfall_id, r.foil);
-      renderCollection();
-    } else {
-      pickPrinting(r.card.name, (card) => {
+    const d = btn.dataset;
+    const r = shown[d.remove ?? d.move ?? d.reprint];
+    if (d.remove) {
+      store.removeCopy(r.entryIds.at(-1));
+    } else if (d.move) {
+      const deckId = await chooseDeck({ title: `Move ${r.entryIds.length > 1 ? `${r.entryIds.length} copies` : "card"} to…`, current: r.deckId });
+      if (deckId === undefined) return;
+      store.moveCopies(r.entryIds, deckId);
+      toast(`Moved to ${deckLabel(deckId)}`);
+    } else if (d.reprint) {
+      return pickPrinting(r.card.name, (card) => {
         store.changePrinting(r.entryIds, card);
         renderCollection();
       });
     }
+    renderCollection();
   };
 }
+
+$("#deck-filter").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  if ("newDeck" in btn.dataset) {
+    const name = prompt("New deck name");
+    if (!name?.trim()) return;
+    place = store.createDeck(name).id;
+  } else {
+    place = btn.dataset.place;
+  }
+  typeFilter = "all";
+  renderCollection();
+});
+
+$("#type-filter").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-type]");
+  if (!btn) return;
+  typeFilter = btn.dataset.type;
+  renderCollection();
+});
+
+$("#rename-deck").addEventListener("click", () => {
+  const deck = store.getDeck(place);
+  const name = prompt("Rename deck", deck.name);
+  if (name?.trim()) {
+    store.renameDeck(deck.id, name);
+    if (destination === deck.id) setDestination(deck.id);
+    renderCollection();
+  }
+});
+
+$("#delete-deck").addEventListener("click", () => {
+  const deck = store.getDeck(place);
+  if (!confirm(`Delete “${deck.name}”? Its cards stay in your collection and move to Extras.`)) return;
+  store.deleteDeck(deck.id);
+  if (destination === deck.id) setDestination(null);
+  place = "all";
+  renderCollection();
+  toast("Deck deleted. Its cards moved to Extras.");
+});
+
 $("#search").addEventListener("input", renderCollection);
 
 $("#refresh-prices").addEventListener("click", async (e) => {
-  const btn = e.target;
+  const btn = e.currentTarget;
   btn.disabled = true;
-  btn.textContent = "Refreshing…";
+  btn.innerHTML = icon("refresh", "spin");
   try {
     store.updatePrices(await scryfall.fetchMany(store.ownedScryfallIds()));
     renderCollection();
-    toast("Prices updated from TCGplayer (via Scryfall)");
+    toast("Prices updated from TCGplayer");
   } catch (err) {
-    toast(err.message);
+    toast(err.message, "alert");
   } finally {
     btn.disabled = false;
-    btn.textContent = "Refresh prices";
+    btn.innerHTML = icon("refresh");
   }
 });
 
 // ---------- Start ----------
+renderRecent();
 updateSyncPill();
-syncNow(); // pull the latest from GitHub on open
+syncNow().then(async () => {
+  // Cards scanned before mana value / type were stored: fill in their details.
+  const missing = store.idsMissingDetails();
+  if (missing.length) store.updatePrices(await scryfall.fetchMany(missing).catch(() => []));
+});

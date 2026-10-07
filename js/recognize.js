@@ -84,7 +84,7 @@ async function identifyNameWithOcr(cardCanvas) {
     }
     if (best?.score >= 0.9) break; // confident; skip the other offsets
   }
-  return best?.name ?? null;
+  return best; // { name, score } or null
 }
 
 // Pick the printing whose set code and/or collector number appear in the
@@ -141,18 +141,23 @@ function toJpegBase64(canvas, maxSide) {
 // Returns { status: "found", card, exact, via: "ocr" | "ai" } or { status: "not-found" }.
 // `exact` is false when the printing (set) is a best guess.
 export async function recognizeCard(cardCanvas, { mode, apiKey }) {
+  let ocrResult = null;
   if (mode !== "ai") {
-    const name = await identifyNameWithOcr(cardCanvas);
-    if (name) {
-      const prints = await scryfall.printings(name);
+    const match = await identifyNameWithOcr(cardCanvas);
+    if (match) {
+      const prints = await scryfall.printings(match.name);
       if (prints.length) {
         const printing = await identifyPrintingWithOcr(cardCanvas, prints);
-        return { status: "found", card: printing ?? mostLikelyPrinting(prints), exact: !!printing, via: "ocr" };
+        ocrResult = { status: "found", card: printing ?? mostLikelyPrinting(prints), exact: !!printing, via: "ocr" };
+        // A near-exact name read is trusted. A looser one could be the wrong
+        // card, so have Claude double-check when a key is available.
+        if (match.score >= 0.9 || !apiKey) return ocrResult;
       }
     }
   }
   if (!apiKey) return { status: "not-found" };
 
   const result = await identifyWithAI(apiKey, cardCanvas);
-  return result ? { status: "found", ...result, via: "ai" } : { status: "not-found" };
+  if (result) return { status: "found", ...result, via: "ai" };
+  return ocrResult ?? { status: "not-found" };
 }

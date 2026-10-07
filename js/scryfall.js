@@ -40,6 +40,9 @@ export function toCardRecord(c) {
     rarity: c.rarity,
     type_line: c.type_line,
     mana_cost: c.mana_cost ?? c.card_faces?.[0]?.mana_cost ?? "",
+    cmc: c.cmc ?? c.card_faces?.[0]?.cmc ?? 0, // mana value, for the mana curve
+    card_type: mainType(c.type_line),
+    colors: c.colors ?? c.card_faces?.[0]?.colors ?? [],
     color_identity: c.color_identity,
     image_small: images.small,
     image_normal: images.normal,
@@ -49,6 +52,16 @@ export function toCardRecord(c) {
     tcgplayer_url: c.purchase_uris?.tcgplayer ?? null,
     prices_updated_at: new Date().toISOString(),
   };
+}
+
+// The card's main type, for cataloging. Multi-type cards are filed under the
+// type that matters most in play: an Artifact Creature is a Creature, an
+// Artifact Land is a Land. Double-faced cards use their front face.
+export const CARD_TYPES = ["Creature", "Planeswalker", "Battle", "Instant", "Sorcery", "Artifact", "Enchantment", "Land"];
+export function mainType(typeLine = "") {
+  const front = typeLine.split(" // ")[0].split(" — ")[0];
+  if (/\bLand\b/.test(front)) return "Land";
+  return CARD_TYPES.find((t) => new RegExp(`\\b${t}\\b`).test(front)) ?? "Other";
 }
 
 export const frontName = (c) => c.card_faces?.[0]?.name ?? c.name;
