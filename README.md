@@ -60,5 +60,5 @@ Then open http://localhost:8000. The camera works on `localhost`. On a phone you
 - [x] Camera scanning, collection and prices
 - [x] Decks: choose a deck (or Extras) before scanning, move cards, rename/delete decks
 - [x] Card types and mana values, with type filters and a mana curve per deck
-- [ ] Commander details: set a deck's commander, check color identity
+- [x] Commanders: mark a deck's commander (or two partners), see its color identity, flag cards outside it
 - [ ] Recommendations: EDHREC staples for your commander, highlighting cards you already own

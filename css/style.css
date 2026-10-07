@@ -325,6 +325,28 @@ dialog header h2 { color: var(--text); text-transform: none; letter-spacing: 0; 
 }
 #printing-grid img { width: 100%; border-radius: 6px; }
 
+/* ---------- Commander ---------- */
+.commander-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 14px; }
+.cmdr {
+  position: relative; display: block; padding: 0; overflow: hidden; text-align: left; cursor: pointer;
+  border-radius: var(--radius); border: 1px solid var(--accent-line); background: var(--surface); color: var(--text); font: inherit;
+}
+.cmdr > img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; object-position: 50% 22%; }
+.cmdr .cmdr-info {
+  position: absolute; inset: auto 0 0 0; padding: 26px 12px 10px;
+  background: linear-gradient(transparent, rgba(6, 10, 20, 0.92) 45%);
+}
+.cmdr .cmdr-label { display: flex; align-items: center; gap: 5px; color: var(--accent); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.cmdr .cmdr-label .icon { width: 14px; height: 14px; }
+.cmdr .cmdr-name { font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmdr .mana { width: 17px; height: 17px; }
+.commander-hint {
+  display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-radius: var(--radius);
+  border: 1px dashed var(--border-strong); color: var(--muted); font-size: 13.5px;
+}
+.commander-hint .icon { color: var(--accent); }
+.tag.commander { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); font-weight: 600; }
+
 /* ---------- Card detail ---------- */
 .card-list li[data-open] { cursor: pointer; }
 .card-list li[data-open]:active { background: var(--surface-2); }
@@ -340,6 +362,8 @@ dialog header h2 { color: var(--text); text-transform: none; letter-spacing: 0; 
 .price-grid small { display: block; color: var(--muted); font-size: 11.5px; }
 .price-grid strong { font-size: 16px; font-variant-numeric: tabular-nums; }
 .detail .tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
+.detail-commander { padding: 0 16px 8px; }
+.detail-commander .btn { width: 100%; }
 .detail-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px; }
 .detail-section { padding: 0 16px; margin: 20px 0 6px; }
 .copies { list-style: none; margin: 0; padding: 0 16px 20px; }
@@ -351,7 +375,7 @@ dialog header h2 { color: var(--text); text-transform: none; letter-spacing: 0; 
 /* ---------- Toast ---------- */
 #toast {
   position: fixed; left: 50%; bottom: calc(86px + env(safe-area-inset-bottom)); transform: translate(-50%, 8px);
-  display: flex; align-items: center; gap: 8px; max-width: calc(100vw - 32px);
+  display: flex; align-items: center; gap: 8px; width: max-content; max-width: calc(100vw - 32px);
   background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: 12px;
   padding: 11px 15px; font-weight: 500; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
   opacity: 0; pointer-events: none; transition: opacity 0.25s, transform 0.25s;

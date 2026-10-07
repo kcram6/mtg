@@ -111,6 +111,35 @@ export function deleteDeck(id) {
   save();
 }
 
+// ---------- Commanders ----------
+// A deck's commander is a specific copy in that deck; up to two (partners).
+// Copies that have since left the deck don't count.
+export function getCommanders(deckId) {
+  const deck = getDeck(deckId);
+  return (deck?.commanders ?? [])
+    .map((id) => data.inventory.find((e) => e.id === id))
+    .filter((e) => e && e.deck_id === deckId)
+    .map((entry) => ({ entry, card: data.cards[entry.scryfall_id] }));
+}
+
+export function setCommander(deckId, entryId, isCommander) {
+  const deck = getDeck(deckId);
+  const current = getCommanders(deckId).map((c) => c.entry.id).filter((id) => id !== entryId);
+  deck.commanders = isCommander ? [...current, entryId].slice(-2) : current;
+  deck.updated_at = now();
+  save();
+}
+
+export const isCommander = (entry) => getCommanders(entry.deck_id).some((c) => c.entry.id === entry.id);
+
+// The colors a deck may use: the union of its commanders' color identities.
+export function commanderIdentity(deckId) {
+  const commanders = getCommanders(deckId);
+  return commanders.length ? new Set(commanders.flatMap((c) => c.card.color_identity ?? [])) : null;
+}
+
+const outsideIdentity = (card, identity) => !!identity && (card.color_identity ?? []).some((c) => !identity.has(c));
+
 // Unknown deck ids (e.g. deleted on another device) count as Extras.
 export const getDeck = (id) => (id ? data.decks.find((d) => d.id === id) : undefined);
 const deckOf = (e) => (getDeck(e.deck_id) ? e.deck_id : null);
@@ -123,6 +152,10 @@ export function getDecks() {
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 }
+
+// Cards that count toward a Commander deck's 100 (tokens don't).
+export const deckSize = (deckId) =>
+  data.inventory.filter((e) => e.deck_id === deckId && cardType(data.cards[e.scryfall_id]) !== "Token").length;
 
 export const extrasCount = () => data.inventory.filter((e) => deckOf(e) === null).length;
 
@@ -137,20 +170,24 @@ const inPlace = (e, place) => {
 export function getCollection(place = "all", type = "all") {
   const groups = new Map();
   const typeCounts = {};
+  const commanderIds = new Set(getDecks().flatMap((d) => getCommanders(d.id).map((c) => c.entry.id)));
+  const identities = new Map(getDecks().map((d) => [d.id, commanderIdentity(d.id)]));
   for (const e of data.inventory) {
     if (!inPlace(e, place)) continue;
     const t = cardType(data.cards[e.scryfall_id]);
     typeCounts[t] = (typeCounts[t] ?? 0) + 1;
     if (type !== "all" && t !== type) continue;
     const deckId = deckOf(e);
-    const key = `${e.scryfall_id}|${e.foil}|${deckId}`;
+    const commander = commanderIds.has(e.id);
+    const key = `${e.scryfall_id}|${e.foil}|${deckId}|${commander}`;
     if (!groups.has(key)) {
       const card = data.cards[e.scryfall_id];
-      groups.set(key, { card, foil: e.foil, deckId, entryIds: [], unitPrice: unitPrice(card, e.foil) });
+      const offIdentity = t !== "Token" && outsideIdentity(card, identities.get(deckId));
+      groups.set(key, { card, foil: e.foil, deckId, commander, offIdentity, entryIds: [], unitPrice: unitPrice(card, e.foil) });
     }
     groups.get(key).entryIds.push(e.id);
   }
-  const rows = [...groups.values()].sort((a, b) => a.card.name.localeCompare(b.card.name));
+  const rows = [...groups.values()].sort((a, b) => b.commander - a.commander || a.card.name.localeCompare(b.card.name));
   const totalCards = rows.reduce((n, r) => n + r.entryIds.length, 0);
   const totalValue = rows.reduce((sum, r) => sum + (r.unitPrice ?? 0) * r.entryIds.length, 0);
   return { rows, totalCards, totalValue, typeCounts };

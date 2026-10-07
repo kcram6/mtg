@@ -433,6 +433,16 @@ function refreshLists() {
   if ($("#view-collection").classList.contains("active")) renderCollection();
 }
 
+// Legendary cards in a deck can be made its commander.
+function commanderButton(entries, card) {
+  const deckId = entries[0].deck_id;
+  if (!store.getDeck(deckId) || !/\bLegendary\b/.test(card.type_line ?? "")) return "";
+  const isCmdr = entries.some((e) => store.isCommander(e));
+  return `<div class="detail-commander">
+    <button class="btn ${isCmdr ? "" : "primary"}" data-act="commander">${icon("crown")}${isCmdr ? "Remove as commander" : `Make commander of ${esc(deckLabel(deckId))}`}</button>
+  </div>`;
+}
+
 function renderDetail() {
   const entries = detailIds.map(store.getEntry).filter(Boolean);
   if (!entries.length) return $("#card-dialog").close();
@@ -453,9 +463,10 @@ function renderDetail() {
           <div><small>Normal</small><strong>${normal ? `$${normal}` : "—"}</strong></div>
           <div><small>Foil</small><strong>${foilPrice ? `$${foilPrice}` : "—"}</strong></div>
         </div>
-        <div class="tags">${deckIds.map((id) => deckTag(id)).join("")}</div>
+        <div class="tags">${entries.some((e) => store.isCommander(e)) ? `<span class="tag commander">${icon("crown")}Commander</span>` : ""}${deckIds.map((id) => deckTag(id)).join("")}</div>
       </div>
     </div>
+    ${commanderButton(entries, card)}
     <div class="detail-actions">
       <button class="btn" data-act="move">${icon("swords")}Move</button>
       <button class="btn" data-act="printing">${icon("swap")}Printing</button>
@@ -508,6 +519,11 @@ $("#card-detail").addEventListener("click", async (e) => {
       renderDetail();
       refreshLists();
     });
+  } else if (btn.dataset.act === "commander") {
+    const current = entries.find((e) => store.isCommander(e));
+    const target = current ?? entries[0];
+    store.setCommander(target.deck_id, target.id, !current);
+    toast(current ? "Removed as commander" : `${card.name} is now the commander`, current ? "check" : "crown");
   } else if (btn.dataset.act === "add") {
     detailIds.push(store.addAnotherCopy(entries.at(-1).id).id);
     toast(`Added another ${card.name}`);
@@ -594,6 +610,37 @@ function renderCurve() {
   bars.onpointerleave = () => show({ target: document.body });
 }
 
+const identityPips = (colors) => manaCost(colors.length ? colors.map((c) => `{${c}}`).join("") : "{C}");
+const WUBRG = ["W", "U", "B", "R", "G"];
+
+function renderCommanders(deck) {
+  const panel = $("#commander-panel");
+  panel.hidden = !deck;
+  if (!deck) return;
+  const commanders = store.getCommanders(deck.id);
+  if (!commanders.length) {
+    panel.innerHTML = `<div class="commander-hint">${icon("crown")}<span>No commander yet. Tap a legendary card in this deck and choose <strong>Make commander</strong>.</span></div>`;
+    return;
+  }
+  const identity = [...store.commanderIdentity(deck.id)].sort((a, b) => WUBRG.indexOf(a) - WUBRG.indexOf(b));
+  panel.innerHTML = commanders
+    .map(
+      ({ entry, card }) => `<button class="cmdr" data-entry="${entry.id}">
+        <img src="${esc(card.image_normal ?? card.image_small)}" alt="">
+        <div class="cmdr-info">
+          <div class="cmdr-label">${icon("crown")}Commander</div>
+          <div class="cmdr-name">${esc(card.name)}</div>
+          <div>${identityPips(identity)}</div>
+        </div>
+      </button>`,
+    )
+    .join("");
+  panel.onclick = (e) => {
+    const btn = e.target.closest("[data-entry]");
+    if (btn) openCardDetail([btn.dataset.entry]);
+  };
+}
+
 function renderCollection() {
   if (place !== "all" && place !== "extras" && !store.getDeck(place)) place = "all";
   renderPlaceChips();
@@ -601,12 +648,14 @@ function renderCollection() {
   const deck = store.getDeck(place);
   $("#deck-head").hidden = !deck;
   if (deck) $("#deck-title").textContent = deck.name;
+  renderCommanders(deck);
   renderCurve();
 
   const { rows, totalCards, totalValue, typeCounts } = store.getCollection(place, typeFilter);
   if (typeFilter !== "all" && !typeCounts[typeFilter]) typeFilter = "all";
   renderTypeChips(typeCounts);
-  $("#total-cards").textContent = totalCards;
+  $("#cards-label").textContent = deck ? "Deck size" : "Cards";
+  $("#total-cards").textContent = deck ? `${store.deckSize(deck.id)} / 100` : totalCards;
   $("#total-value").textContent = money(totalValue);
 
   const q = $("#search").value.trim().toLowerCase();
@@ -623,8 +672,10 @@ function renderCollection() {
           <div class="meta">${manaCost(r.card.mana_cost)} ${esc(r.card.type_line)}</div>
           <div class="meta">${esc(r.card.set_name)} #${esc(r.card.collector_number)} · ${esc(r.card.rarity)}</div>
           <div class="tags">
+            ${r.commander ? `<span class="tag commander">${icon("crown")}Commander</span>` : ""}
             ${place === "all" ? deckTag(r.deckId) : ""}
             ${r.foil ? `<span class="tag foil">${icon("sparkle")}Foil</span>` : ""}
+            ${r.offIdentity ? `<span class="tag warn">${icon("alert")}Outside commander's colors</span>` : ""}
           </div>
         </div>
         <div class="price">${money(r.unitPrice)}${r.entryIds.length > 1 ? `<small>${money((r.unitPrice ?? 0) * r.entryIds.length)}</small>` : ""}${icon("chevron", "chev-right")}</div>
