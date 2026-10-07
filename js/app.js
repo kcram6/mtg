@@ -169,6 +169,11 @@ async function syncNow() {
     syncing = false;
     renderSyncStatus("error", "Sync failed", "alert");
     toast(err.message, "alert", 5000);
+    // GitHub hiccups (5xx, network): try again in a minute.
+    if (!err.status || err.status >= 500) {
+      clearTimeout(syncTimer);
+      syncTimer = setTimeout(syncNow, 60000);
+    }
   }
 }
 
