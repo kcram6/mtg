@@ -67,6 +67,7 @@ Then open http://localhost:8000. The camera works on `localhost`. On a phone you
 - [x] Decks: choose a deck (or Extras) before scanning, move cards, rename/delete decks
 - [x] Card types and mana values, with type filters and a mana curve per deck
 - [x] Commanders: mark a deck's commander (or two partners), see its color identity, flag cards outside it
+- [x] Singleton check: flags duplicate cards in a deck (basic lands and "any number" cards excepted), with a one-tap fix
 - [x] Win/loss tracking per deck: quick logging, win rate vs. chance, last 10 results, game history with notes
 - [x] Deck rating: estimated Commander bracket from Game Changers, mass land denial and extra turns
 - [x] Decks tab: deck tiles with commander art; per-deck upgrade suggestions from EDHREC (flagging cards you already own) and a wishlist

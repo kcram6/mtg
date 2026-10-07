@@ -172,6 +172,38 @@ export function bracketLists() {
 // The lists if they've already loaded (for tagging cards without waiting).
 export const bracketListsIfLoaded = () => bracketLoaded;
 
+// Commander is singleton, but a few cards say "A deck can have any number of
+// cards named ..." (or "up to seven/nine"). Name -> allowed copies, cached for a week.
+const LIMITS_KEY = "mtg-copy-limits";
+const WORD_NUMBERS = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+let limitsPromise = null, limitsLoaded = null;
+export function copyLimits() {
+  limitsPromise ??= (async () => {
+    let limits = null;
+    try {
+      const cached = JSON.parse(localStorage.getItem(LIMITS_KEY));
+      if (cached && Date.now() - cached.at < 7 * 864e5) limits = cached.limits;
+    } catch {}
+    if (!limits) {
+      limits = {};
+      const res = await scryfall(`/cards/search?q=${encodeURIComponent('fo:"a deck can have" f:commander')}`);
+      for (const c of res?.data ?? []) {
+        const text = c.oracle_text ?? (c.card_faces ?? []).map((f) => f.oracle_text).join(" ");
+        const m = text.match(/deck can have (any number of|up to (\w+)) cards named/i);
+        if (m) limits[c.name] = m[2] ? (WORD_NUMBERS[m[2].toLowerCase()] ?? Number(m[2])) : null; // null = any number
+      }
+      try {
+        localStorage.setItem(LIMITS_KEY, JSON.stringify({ at: Date.now(), limits }));
+      } catch {}
+    }
+    limitsLoaded = new Map(Object.entries(limits).map(([k, v]) => [k, v ?? Infinity]));
+    return limitsLoaded;
+  })();
+  limitsPromise.catch(() => (limitsPromise = null));
+  return limitsPromise;
+}
+export const copyLimitsIfLoaded = () => limitsLoaded ?? new Map();
+
 // Name suggestions while typing, tokens included.
 export async function autocomplete(query) {
   const res = await scryfall(`/cards/autocomplete?q=${encodeURIComponent(query)}&include_extras=true`);

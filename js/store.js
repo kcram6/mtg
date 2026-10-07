@@ -193,6 +193,38 @@ export const deckCardList = (deckId) =>
 export const deckCardNames = (deckId) =>
   new Set(data.inventory.filter((e) => e.deck_id === deckId).map((e) => data.cards[e.scryfall_id].name.split(" // ")[0].toLowerCase()));
 
+// ---------- Singleton check ----------
+// Commander decks allow one copy of each card (any printing), except basic
+// lands and cards whose text allows more (`limits`: name -> allowed copies).
+export function deckDuplicates(deckId, limits = new Map()) {
+  const byName = new Map();
+  for (const e of data.inventory) {
+    if (e.deck_id !== deckId) continue;
+    const card = data.cards[e.scryfall_id];
+    if (cardType(card) === "Token" || /\bBasic\b/.test(card.type_line ?? "")) continue;
+    if (!byName.has(card.name)) byName.set(card.name, []);
+    byName.get(card.name).push(e);
+  }
+  return [...byName.entries()]
+    .map(([name, entries]) => ({ name, entries, limit: limits.get(name) ?? 1 }))
+    .filter((d) => d.entries.length > d.limit)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Move the copies over the limit to Extras, keeping the commander's copy and
+// otherwise the earliest added. Returns how many were moved.
+export function moveDuplicatesToExtras(deckId, limits) {
+  const commanderIds = new Set(getCommanders(deckId).map((c) => c.entry.id));
+  const extra = deckDuplicates(deckId, limits).flatMap((d) =>
+    [...d.entries]
+      .sort((a, b) => commanderIds.has(b.id) - commanderIds.has(a.id) || a.added_at.localeCompare(b.added_at))
+      .slice(d.limit)
+      .map((e) => e.id),
+  );
+  if (extra.length) moveCopies(extra, null);
+  return extra.length;
+}
+
 // ---------- Commanders ----------
 // A deck's commander is a specific copy in that deck; up to two (partners).
 // Copies that have since left the deck don't count.

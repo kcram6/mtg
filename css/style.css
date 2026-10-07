@@ -517,6 +517,23 @@ dialog header h2 { color: var(--text); text-transform: none; letter-spacing: 0; 
 .btn.full { width: 100%; }
 .tile-record { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 
+/* ---------- Duplicate (singleton) warnings ---------- */
+.dupe-alert {
+  display: flex; flex-direction: column; gap: 10px; margin: 0 0 12px; padding: 12px 14px; border-radius: var(--radius);
+  background: rgba(245, 185, 66, 0.08); border: 1px solid rgba(245, 185, 66, 0.4);
+}
+.dupe-alert .dupe-head { display: flex; gap: 10px; align-items: flex-start; }
+.dupe-alert .dupe-head .icon { color: var(--warn); margin-top: 2px; }
+.dupe-alert strong { display: block; color: var(--warn); }
+.dupe-alert small { color: var(--muted); font-size: 12.5px; }
+.dupe-alert ul { margin: 0; padding: 0 0 0 28px; font-size: 13.5px; }
+.dupe-alert .btn { align-self: flex-start; }
+.tile-flag {
+  position: absolute; left: 10px; z-index: 1; display: flex; align-items: center; gap: 4px; padding: 3px 7px; border-radius: 7px;
+  font-size: 11px; font-weight: 700; background: rgba(6, 10, 20, 0.8); border: 1px solid rgba(245, 185, 66, 0.5); color: var(--warn);
+}
+.tile-flag .icon { width: 12px; height: 12px; }
+
 /* ---------- Card detail ---------- */
 .card-list li[data-open] { cursor: pointer; }
 .card-list li[data-open]:active { background: var(--surface-2); }

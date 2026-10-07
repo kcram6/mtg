@@ -340,7 +340,8 @@ async function handleCapture(cardCanvas, { manual, attempt, aiTried }) {
     recent.unshift({ entryId: entry.id, via: result.via, exact: result.exact, undone: false });
     flash("ok");
     beep(true);
-    setStatus(`${scryfall.frontName(result.card)} added to ${deckLabel(destination)}`, "ok");
+    const dupe = duplicateWarning(destination, result.card.name);
+    setStatus(dupe ?? `${scryfall.frontName(result.card)} added to ${deckLabel(destination)}`, dupe ? "warn" : "ok");
     renderRecent();
     return { outcome: "done", aiUsed };
   } catch (err) {
@@ -428,7 +429,8 @@ $("#recent").addEventListener("click", (e) => {
     recent.unshift({ ...r, entryId: copy.id });
     flash("ok");
     beep(true);
-    setStatus(`Another ${store.getCard(copy.scryfall_id).name} added`, "ok");
+    const dupe = duplicateWarning(copy.deck_id, store.getCard(copy.scryfall_id).name);
+    setStatus(dupe ?? `Another ${store.getCard(copy.scryfall_id).name} added`, dupe ? "warn" : "ok");
   } else {
     Object.assign(r, { foil: entry.foil, deckId: entry.deck_id, undone: true });
     store.removeCopy(r.entryId);
@@ -483,7 +485,9 @@ $("#manual-add").addEventListener("click", () =>
         recent.unshift({ entryId: entry.id, via: "manual", exact: true, undone: false });
         flash("ok");
         beep(true);
-        setStatus(`${scryfall.frontName(card)} added to ${deckLabel(destination)}`, "ok");
+        const dupe = duplicateWarning(destination, card.name);
+        setStatus(dupe ?? `${scryfall.frontName(card)} added to ${deckLabel(destination)}`, dupe ? "warn" : "ok");
+        if (dupe) toast(dupe, "alert", 4500);
         renderRecent();
       }),
   }),
@@ -598,7 +602,8 @@ $("#card-detail").addEventListener("click", async (e) => {
     toast(current ? "Removed as commander" : `${card.name} is now the commander`, current ? "check" : "crown");
   } else if (btn.dataset.act === "add") {
     detailIds.push(store.addAnotherCopy(entries.at(-1).id).id);
-    toast(`Added another ${card.name}`);
+    const dupe = duplicateWarning(entries[0].deck_id, card.name);
+    toast(dupe ?? `Added another ${card.name}`, dupe ? "alert" : "check", dupe ? 4500 : 3000);
   } else {
     return;
   }
@@ -788,6 +793,7 @@ function renderColors() {
 }
 
 function renderCollection() {
+  dupeNames.clear();
   if (place !== "all" && place !== "extras" && !store.getDeck(place)) place = "all";
   renderPlaceChips();
 
@@ -826,6 +832,7 @@ function renderCollection() {
             ${place === "all" ? deckTag(r.deckId) : ""}
             ${r.foil ? `<span class="tag foil">${icon("sparkle")}Foil</span>` : ""}
             ${scryfall.bracketListsIfLoaded()?.gameChangers.has(r.card.name) ? `<span class="tag gc">Game Changer</span>` : ""}
+            ${isDuplicate(r.deckId, r.card.name) ? `<span class="tag warn">${icon("alert")}Duplicate</span>` : ""}
             ${r.offIdentity ? `<span class="tag warn">${icon("alert")}Outside commander's colors</span>` : ""}
           </div>
         </div>
@@ -930,6 +937,7 @@ function showDeckList() {
         return `<button class="deck-tile" data-deck="${d.id}" ${artStyle(lead)}>
           ${lead ? `<div class="tile-art"></div>` : `<div class="tile-empty">${icon("swords")}</div>`}
           ${bracket ? `<span class="tile-bracket" title="Estimated Commander bracket">B${bracket}</span>` : ""}
+          ${(() => { const n = dupesOf(d.id).length; return n ? `<span class="tile-flag" style="top:${bracket ? 38 : 10}px">${icon("alert")}${n} duplicate${n === 1 ? "" : "s"}</span>` : ""; })()}
           ${lead ? `<div class="tile-pips">${identityPips(sortedIdentity(d.id))}</div>` : ""}
           <div class="tile-body">
             <div class="tile-name">${esc(d.name)}</div>
@@ -941,7 +949,8 @@ function showDeckList() {
       })
       .join("") + `<button class="deck-tile new" data-new-deck><span>${icon("plus")}New deck</span></button>`;
   if (!scryfall.bracketListsIfLoaded() && decks.length) {
-    scryfall.bracketLists().then(() => !openDeckId && $("#view-decks").classList.contains("active") && showDeckList(), () => {});
+    scryfall.copyLimits().then(() => $("#view-decks").classList.contains("active") && (openDeckId ? renderDeckPage() : showDeckList()), () => {});
+scryfall.bracketLists().then(() => !openDeckId && $("#view-decks").classList.contains("active") && showDeckList(), () => {});
   }
 }
 
@@ -997,11 +1006,46 @@ function renderDeckPage() {
   $("#deck-wishlist").hidden = deckTab !== "wishlist";
   $("#deck-games").hidden = deckTab !== "games";
   renderRecordBar(deck);
+  renderDupes(deck);
   renderRating(deck);
   if (deckTab === "upgrades") renderUpgrades(deck);
   else if (deckTab === "wishlist") renderWishlist(deck);
   else renderGames(deck);
 }
+
+// ---------- Singleton (duplicate) check ----------
+const dupesOf = (deckId) => store.deckDuplicates(deckId, scryfall.copyLimitsIfLoaded());
+const dupeNames = new Map(); // deckId -> Set of duplicated names, per render
+const isDuplicate = (deckId, name) => {
+  if (!store.getDeck(deckId)) return false;
+  if (!dupeNames.has(deckId)) dupeNames.set(deckId, new Set(dupesOf(deckId).map((d) => d.name)));
+  return dupeNames.get(deckId).has(name);
+};
+
+// Message to show when a card just added to a deck breaks the singleton rule.
+function duplicateWarning(deckId, name) {
+  const dupe = store.getDeck(deckId) && dupesOf(deckId).find((d) => d.name === name);
+  if (!dupe) return null;
+  return `${name.split(" // ")[0]} is now in ${deckLabel(deckId)} ${dupe.entries.length}× (Commander allows ${dupe.limit === 1 ? "1 copy" : `up to ${dupe.limit}`})`;
+}
+
+function renderDupes(deck) {
+  const dupes = dupesOf(deck.id);
+  $("#deck-dupes").innerHTML = dupes.length
+    ? `<div class="dupe-alert">
+        <div class="dupe-head">${icon("alert")}<div><strong>${dupes.length} duplicate card${dupes.length === 1 ? "" : "s"}</strong><small>Commander decks allow one copy of each card, except basic lands.</small></div></div>
+        <ul>${dupes.map((d) => `<li>${d.entries.length}× ${esc(d.name)}${d.limit > 1 ? ` (limit ${d.limit})` : ""}</li>`).join("")}</ul>
+        <button class="btn sm" data-fix-dupes>${icon("inbox")}Move extras to Extras</button>
+      </div>`
+    : "";
+}
+
+$("#deck-dupes").addEventListener("click", (e) => {
+  if (!e.target.closest("[data-fix-dupes]")) return;
+  const moved = store.moveDuplicatesToExtras(openDeckId, scryfall.copyLimitsIfLoaded());
+  toast(`Moved ${moved} extra cop${moved === 1 ? "y" : "ies"} to Extras`);
+  renderDeckPage();
+});
 
 // ---------- Wins & losses ----------
 const pctText = (x) => (x == null ? "—" : `${Math.round(x * 100)}%`);
@@ -1363,6 +1407,7 @@ $("#deck-wishlist").addEventListener("click", (e) => {
 if (restoredFromLink) setTimeout(() => toast("Settings restored from your setup link"), 300);
 renderRecent();
 updateSyncPill();
+scryfall.copyLimits().then(() => $("#view-decks").classList.contains("active") && (openDeckId ? renderDeckPage() : showDeckList()), () => {});
 scryfall.bracketLists().then(() => $("#view-collection").classList.contains("active") && renderCollection(), () => {});
 syncNow().then(async () => {
   // Cards scanned before mana value / type were stored: fill in their details.
