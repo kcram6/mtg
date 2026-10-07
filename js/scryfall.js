@@ -45,6 +45,7 @@ export function toCardRecord(c) {
     card_type: mainType(c.type_line),
     colors: c.colors ?? c.card_faces?.[0]?.colors ?? [],
     color_identity: c.color_identity,
+    edhrec_rank: c.edhrec_rank ?? null, // popularity in Commander (1 = most played)
     image_small: images.small,
     image_normal: images.normal,
     image_art: images.art_crop,

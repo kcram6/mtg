@@ -84,7 +84,7 @@ export const getCard = (id) => data.cards[id];
 export const cardType = (card) => card.card_type ?? mainType(card.type_line);
 // Cards saved before mana value / type were stored; refresh these from Scryfall.
 export const idsMissingDetails = () =>
-  Object.keys(data.cards).filter((id) => data.cards[id].cmc === undefined || data.cards[id].flavor_name === undefined);
+  Object.keys(data.cards).filter((id) => ["cmc", "flavor_name", "edhrec_rank"].some((f) => data.cards[id][f] === undefined));
 export const getEntry = (id) => data.inventory.find((e) => e.id === id);
 export const ownedScryfallIds = () => [...new Set(data.inventory.map((e) => e.scryfall_id))];
 
@@ -271,6 +271,27 @@ export function getDecks() {
 // Cards that count toward a Commander deck's 100 (tokens don't).
 export const deckSize = (deckId) =>
   data.inventory.filter((e) => e.deck_id === deckId && cardType(data.cards[e.scryfall_id]) !== "Token").length;
+
+// ---------- Unused gems ----------
+// Cards in no deck that are worth money or popular in Commander: candidates to
+// upgrade a deck with, or to sell.
+export const GEM_PRICE = 2;
+export const GEM_RANK = 2500;
+export function isGem(card, foil) {
+  if (cardType(card) === "Token" || /\bBasic\b/.test(card.type_line ?? "")) return false;
+  return (unitPrice(card, foil) ?? 0) >= GEM_PRICE || (card.edhrec_rank != null && card.edhrec_rank <= GEM_RANK);
+}
+
+// Decks a card could go in: the commander's colors cover the card's, and the
+// deck doesn't already have it.
+export function decksCardFits(card) {
+  return getDecks().filter((d) => {
+    const identity = commanderIdentity(d.id);
+    if (!identity) return false;
+    if ((card.color_identity ?? []).some((c) => !identity.has(c))) return false;
+    return !data.inventory.some((e) => e.deck_id === d.id && data.cards[e.scryfall_id].name === card.name);
+  });
+}
 
 export const extrasCount = () => data.inventory.filter((e) => deckOf(e) === null).length;
 

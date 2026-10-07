@@ -677,6 +677,7 @@ function renderPlaceChips() {
   const chips = [
     { id: "all", label: "All", iconName: "layers" },
     { id: "extras", label: "Extras", iconName: "inbox" },
+    { id: "unused", label: "Unused gems", iconName: "sparkle" },
     ...store.getDecks().map((d) => ({ id: d.id, label: d.name, iconName: "swords" })),
   ];
   $("#deck-filter").innerHTML =
@@ -803,9 +804,17 @@ function renderColors() {
   body.onpointerleave = () => show({ target: document.body });
 }
 
+// "Fits: Atraxa Superfriends, Jace" for Unused gems.
+function fitsTag(card) {
+  const decks = store.decksCardFits(card);
+  if (!decks.length) return "";
+  const names = decks.slice(0, 2).map((d) => d.name).join(", ") + (decks.length > 2 ? ` +${decks.length - 2}` : "");
+  return `<span class="tag deck">${icon("swords")}Fits ${esc(names)}</span>`;
+}
+
 function renderCollection() {
   dupeNames.clear();
-  if (place !== "all" && place !== "extras" && !store.getDeck(place)) place = "all";
+  if (!["all", "extras", "unused"].includes(place) && !store.getDeck(place)) place = "all";
   renderPlaceChips();
 
   const deck = store.getDeck(place);
@@ -815,10 +824,18 @@ function renderCollection() {
   renderCurve();
   renderColors();
 
-  const { rows, totalCards, totalValue, typeCounts } = store.getCollection(place, typeFilter);
+  const unused = place === "unused";
+  let { rows, totalCards, totalValue, typeCounts } = store.getCollection(unused ? "extras" : place, typeFilter);
+  if (unused) {
+    rows = rows.filter((r) => store.isGem(r.card, r.foil));
+    totalCards = rows.reduce((n, r) => n + r.entryIds.length, 0);
+    totalValue = rows.reduce((sum, r) => sum + (r.unitPrice ?? 0) * r.entryIds.length, 0);
+  }
+  $("#unused-note").hidden = !unused;
   if (typeFilter !== "all" && !typeCounts[typeFilter]) typeFilter = "all";
   renderTypeChips(typeCounts);
-  $("#cards-label").textContent = deck ? "Deck size" : "Cards";
+  $("#cards-label").textContent = deck ? "Deck size" : unused ? "Unused gems" : "Cards";
+  $("#value-label").textContent = unused ? "Could sell for · TCGplayer" : "Value · TCGplayer";
   $("#total-cards").textContent = deck ? `${store.deckSize(deck.id)} / 100` : totalCards;
   $("#total-value").textContent = money(totalValue);
 
@@ -844,6 +861,8 @@ function renderCollection() {
             ${place === "all" ? deckTag(r.deckId) : ""}
             ${r.foil ? `<span class="tag foil">${icon("sparkle")}Foil</span>` : ""}
             ${scryfall.bracketListsIfLoaded()?.gameChangers.has(r.card.name) ? `<span class="tag gc">Game Changer</span>` : ""}
+            ${unused && r.card.edhrec_rank != null && r.card.edhrec_rank <= store.GEM_RANK ? `<span class="tag owned">#${r.card.edhrec_rank.toLocaleString()} in Commander</span>` : ""}
+            ${unused ? fitsTag(r.card) : ""}
             ${isDuplicate(r.deckId, r.card.name) ? `<span class="tag warn">${icon("alert")}Duplicate</span>` : ""}
             ${r.offIdentity ? `<span class="tag warn">${icon("alert")}Outside commander's colors</span>` : ""}
           </div>
@@ -852,7 +871,7 @@ function renderCollection() {
       </li>`,
         )
         .join("")
-    : `<li class="empty">${rows.length ? "No matches" : deck ? "No cards in this deck yet. Choose it when you start scanning." : "No cards yet. Head to Scan to add some."}</li>`;
+    : `<li class="empty">${rows.length ? "No matches" : unused ? "No unused gems. Every valuable or popular card you own is in a deck." : deck ? "No cards in this deck yet. Choose it when you start scanning." : "No cards yet. Head to Scan to add some."}</li>`;
 
   $("#collection").onclick = (e) => {
     const row = e.target.closest("[data-open]");
