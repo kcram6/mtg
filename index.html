@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#14161c">
+  <title>MTG Collection</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🃏</text></svg>">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header>
+    <h1>MTG Collection</h1>
+    <button id="sync-status" class="pill" title="Sync with GitHub">Not synced</button>
+  </header>
+
+  <main>
+    <!-- Scan -->
+    <section id="view-scan" class="view active">
+      <div id="camera">
+        <video id="video" playsinline muted></video>
+        <div id="guide"></div>
+        <div id="flash"></div>
+        <div id="camera-status">Tap “Start camera” to begin</div>
+        <button id="start-camera" class="primary big">Start camera</button>
+      </div>
+      <div class="controls">
+        <label class="toggle"><input type="checkbox" id="auto" checked> Auto-scan</label>
+        <label class="toggle"><input type="checkbox" id="foil"> Foil</label>
+        <button id="scan-now">Scan now</button>
+      </div>
+      <h2>Just scanned <span id="session-count" class="muted"></span></h2>
+      <ul id="recent" class="card-list"></ul>
+    </section>
+
+    <!-- Collection -->
+    <section id="view-collection" class="view">
+      <div class="summary">
+        <div><strong id="total-cards">0</strong><span>cards</span></div>
+        <div><strong id="total-value">$0.00</strong><span>value (TCGplayer)</span></div>
+      </div>
+      <div class="controls">
+        <input id="search" type="search" placeholder="Search your cards…">
+        <button id="refresh-prices">Refresh prices</button>
+      </div>
+      <ul id="collection" class="card-list"></ul>
+    </section>
+
+    <!-- Settings -->
+    <section id="view-settings" class="view">
+      <form id="settings-form">
+        <h2>Card reading</h2>
+        <label>Reader
+          <select name="readerMode">
+            <option value="free-first">Free OCR first, Claude only if needed</option>
+            <option value="ai">Claude every scan (more accurate)</option>
+          </select>
+        </label>
+        <label>Anthropic API key <small>(stored only on this device)</small>
+          <input name="anthropicKey" type="password" autocomplete="off" placeholder="sk-ant-…">
+        </label>
+
+        <h2>GitHub sync</h2>
+        <label>Data repo <small>(a private repo, e.g. yourname/mtg-data)</small>
+          <input name="githubRepo" autocomplete="off" placeholder="yourname/mtg-data">
+        </label>
+        <label>GitHub token <small>(fine-grained, “Contents: read and write” on that repo only)</small>
+          <input name="githubToken" type="password" autocomplete="off" placeholder="github_pat_…">
+        </label>
+        <div class="controls">
+          <button type="submit" class="primary">Save</button>
+          <button type="button" id="test-github">Test GitHub</button>
+          <button type="button" id="export">Download backup</button>
+        </div>
+        <p id="settings-msg" class="muted"></p>
+      </form>
+    </section>
+  </main>
+
+  <nav>
+    <button data-view="scan" class="active">📷<span>Scan</span></button>
+    <button data-view="collection">🗂️<span>Collection</span></button>
+    <button data-view="settings">⚙️<span>Settings</span></button>
+  </nav>
+
+  <dialog id="printing-dialog">
+    <header>
+      <h2>Choose printing</h2>
+      <button id="close-dialog" aria-label="Close">✕</button>
+    </header>
+    <div id="printing-grid"></div>
+  </dialog>
+
+  <div id="toast"></div>
+</body>
+</html>
