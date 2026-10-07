@@ -231,7 +231,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px v
 .stat-label { display: block; font-size: 12px; color: var(--muted); }
 .stat strong { display: block; font-size: 24px; letter-spacing: -0.02em; margin-top: 2px; }
 
-.card-list .mana { width: 15px; height: 15px; aspect-ratio: auto; border-radius: 50%; background: none; vertical-align: -3px; margin-right: 1px; }
+.mana, .card-list .mana { width: 15px; height: 15px; aspect-ratio: auto; border-radius: 50%; background: none; vertical-align: -3px; margin-right: 1px; }
 
 /* Mana curve: single series, so no legend; the readout doubles as the tooltip. */
 .curve-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
@@ -319,6 +319,29 @@ dialog header h2 { color: var(--text); text-transform: none; letter-spacing: 0; 
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; color: var(--text); cursor: pointer;
 }
 #printing-grid img { width: 100%; border-radius: 6px; }
+
+/* ---------- Card detail ---------- */
+.card-list li[data-open] { cursor: pointer; }
+.card-list li[data-open]:active { background: var(--surface-2); }
+.chev-right { transform: rotate(-90deg); color: var(--faint); display: block; margin: 6px 0 0 auto; width: 16px; height: 16px; }
+.detail { display: grid; grid-template-columns: 44% 1fr; gap: 16px; padding: 16px; }
+.detail-img { width: 100%; border-radius: 4.75% / 3.5%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); }
+.detail-info { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.detail .mana-row .mana { width: 20px; height: 20px; margin-right: 2px; }
+.detail-type { font-weight: 600; margin-top: 4px; }
+.detail .meta { font-size: 13px; color: var(--muted); }
+.price-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 6px; }
+.price-grid div { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.price-grid small { display: block; color: var(--muted); font-size: 11.5px; }
+.price-grid strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+.detail .tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
+.detail-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px; }
+.detail-section { padding: 0 16px; margin: 20px 0 6px; }
+.copies { list-style: none; margin: 0; padding: 0 16px 20px; }
+.copies li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.copy-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.copy-info span { font-weight: 600; }
+.copy-info small { color: var(--muted); font-size: 12px; }
 
 /* ---------- Toast ---------- */
 #toast {

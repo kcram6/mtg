@@ -117,7 +117,7 @@ store.onChange(() => {
   clearTimeout(syncTimer);
   if (store.changeCount > 0) syncTimer = setTimeout(syncNow, 20000);
 });
-$("#sync-status").addEventListener("click", syncNow);
+$("#sync-status").addEventListener("click", () => (configured() ? syncNow() : showView("settings")));
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden" && store.changeCount > 0) syncNow();
 });
@@ -329,7 +329,7 @@ function renderRecent() {
       r.card = card; // keep for display after undo
       const foil = entry?.foil ?? r.foil;
       return `
-        <li class="${r.undone ? "undone" : ""}">
+        <li class="${r.undone ? "undone" : ""}" ${r.undone ? "" : `data-open="${i}"`}>
           <img src="${esc(card.image_small)}" alt="" loading="lazy">
           <div class="info">
             <div class="name">${esc(card.name)}</div>
@@ -341,24 +341,26 @@ function renderRecent() {
               <span class="tag">${r.via === "ai" ? "AI" : "Free OCR"}</span>
             </div>
           </div>
-          <div class="price">${money(store.unitPrice(card, foil))}</div>
+          <div class="price">${money(store.unitPrice(card, foil))}${r.undone ? "" : icon("chevron", "chev-right")}</div>
           ${r.undone ? "" : `<div class="actions">
             <button class="btn sm" data-undo="${i}">${icon("undo")}Undo</button>
-            <button class="btn sm" data-plus="${i}">${icon("plus")}1</button>
-            <button class="btn sm" data-move="${i}">${icon("swords")}Move</button>
-            <button class="btn sm" data-reprint="${i}">${icon("swap")}Printing</button>
-            <button class="btn sm" data-foil="${i}">${icon("sparkle")}${foil ? "Not foil" : "Foil"}</button>
+            <button class="btn sm" data-plus="${i}">${icon("plus")}1 copy</button>
+            <button class="btn sm" data-open="${i}">${icon("pencil")}Edit</button>
           </div>`}
         </li>`;
     })
     .join("");
 }
 
-$("#recent").addEventListener("click", async (e) => {
-  const btn = e.target.closest("button");
-  if (!btn) return;
+$("#recent").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-undo], button[data-plus]");
+  if (!btn) {
+    const row = e.target.closest("[data-open]");
+    if (row) openCardDetail([recent[row.dataset.open].entryId]);
+    return;
+  }
   const d = btn.dataset;
-  const r = recent[d.undo ?? d.plus ?? d.move ?? d.reprint ?? d.foil];
+  const r = recent[d.undo ?? d.plus];
   const entry = store.getEntry(r.entryId);
   if (d.plus) {
     const copy = store.addAnotherCopy(r.entryId);
@@ -366,22 +368,112 @@ $("#recent").addEventListener("click", async (e) => {
     flash("ok");
     beep(true);
     setStatus(`Another ${store.getCard(copy.scryfall_id).name} added`, "ok");
-  } else if (d.undo) {
+  } else {
     Object.assign(r, { foil: entry.foil, deckId: entry.deck_id, undone: true });
     store.removeCopy(r.entryId);
-  } else if (d.move) {
-    const deckId = await chooseDeck({ title: "Move to…", current: entry.deck_id });
-    if (deckId !== undefined) store.moveCopies([r.entryId], deckId);
-  } else if (d.reprint) {
-    pickPrinting(store.getCard(entry.scryfall_id).name, (card) => {
-      store.changePrinting([r.entryId], card);
-      r.exact = true;
-      renderRecent();
-    });
-  } else if (d.foil) {
-    store.setFoil(r.entryId, !entry.foil);
   }
   renderRecent();
+});
+
+// ---------- Card detail / edit ----------
+// Shows one printing and lets you edit each physical copy (foil, remove) or
+// all of them (deck, printing). `detailIds` are the inventory entries shown.
+let detailIds = [];
+
+function openCardDetail(entryIds) {
+  detailIds = [...entryIds];
+  renderDetail();
+  $("#card-dialog").showModal();
+}
+
+function refreshLists() {
+  renderRecent();
+  if ($("#view-collection").classList.contains("active")) renderCollection();
+}
+
+function renderDetail() {
+  const entries = detailIds.map(store.getEntry).filter(Boolean);
+  if (!entries.length) return $("#card-dialog").close();
+  const card = store.getCard(entries[0].scryfall_id);
+  const deckIds = [...new Set(entries.map((e) => e.deck_id))];
+  const normal = card.price_usd, foilPrice = card.price_usd_foil ?? card.price_usd_etched;
+
+  $("#card-dialog-title").textContent = card.name;
+  $("#card-detail").innerHTML = `
+    <div class="detail">
+      <img class="detail-img" src="${esc(card.image_normal ?? card.image_small)}" alt="${esc(card.name)}">
+      <div class="detail-info">
+        <div class="mana-row">${manaCost(card.mana_cost) || '<span class="muted">No mana cost</span>'}</div>
+        <div class="detail-type">${esc(card.type_line)}</div>
+        <div class="meta">${esc(card.set_name)}</div>
+        <div class="meta">${esc(card.set_code?.toUpperCase())} #${esc(card.collector_number)} · ${esc(card.rarity)}</div>
+        <div class="price-grid">
+          <div><small>Normal</small><strong>${normal ? `$${normal}` : "—"}</strong></div>
+          <div><small>Foil</small><strong>${foilPrice ? `$${foilPrice}` : "—"}</strong></div>
+        </div>
+        <div class="tags">${deckIds.map((id) => deckTag(id)).join("")}</div>
+      </div>
+    </div>
+    <div class="detail-actions">
+      <button class="btn" data-act="move">${icon("swords")}Move</button>
+      <button class="btn" data-act="printing">${icon("swap")}Printing</button>
+      <button class="btn" data-act="add">${icon("plus")}Add copy</button>
+      ${card.tcgplayer_url ? `<a class="btn" href="${esc(card.tcgplayer_url)}" target="_blank" rel="noopener">${icon("external")}TCGplayer</a>` : ""}
+    </div>
+    <div class="section-head detail-section"><h2>Copies</h2><span class="count">${entries.length}</span></div>
+    <ul class="copies">
+      ${entries
+        .map(
+          (e, i) => `<li>
+            <div class="copy-info">
+              <span>Copy ${i + 1}</span>
+              <small>${esc(deckLabel(e.deck_id))} · added ${new Date(e.added_at).toLocaleDateString()} · ${money(store.unitPrice(card, e.foil))}</small>
+            </div>
+            <label class="switch"><input type="checkbox" data-foil="${e.id}" ${e.foil ? "checked" : ""}><span class="track"></span>Foil</label>
+            <button class="btn icon-only ghost danger" data-remove="${e.id}" aria-label="Remove this copy" title="Remove this copy">${icon("trash")}</button>
+          </li>`,
+        )
+        .join("")}
+    </ul>`;
+}
+
+$("#card-detail").addEventListener("change", (e) => {
+  const id = e.target.dataset.foil;
+  if (!id) return;
+  store.setFoil(id, e.target.checked);
+  renderDetail();
+  refreshLists();
+});
+
+$("#card-detail").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  const entries = detailIds.map(store.getEntry).filter(Boolean);
+  const card = store.getCard(entries[0].scryfall_id);
+  if (btn.dataset.remove) {
+    if (entries.length === 1 && !confirm(`Remove ${card.name} from your collection?`)) return;
+    store.removeCopy(btn.dataset.remove);
+    toast("Copy removed");
+  } else if (btn.dataset.act === "move") {
+    const deckId = await chooseDeck({ title: `Move ${entries.length > 1 ? `${entries.length} copies` : "card"} to…`, current: entries[0].deck_id });
+    if (deckId === undefined) return;
+    store.moveCopies(detailIds, deckId);
+    toast(`Moved to ${deckLabel(deckId)}`);
+  } else if (btn.dataset.act === "printing") {
+    return pickPrinting(card.name, (printing) => {
+      store.changePrinting(detailIds, printing);
+      recent.forEach((r) => detailIds.includes(r.entryId) && (r.exact = true));
+      renderDetail();
+      refreshLists();
+    });
+  } else if (btn.dataset.act === "add") {
+    detailIds.push(store.addAnotherCopy(entries.at(-1).id).id);
+    toast(`Added another ${card.name}`);
+  } else {
+    return;
+  }
+  renderDetail();
+  refreshLists();
 });
 
 // ---------- Printing picker ----------
@@ -482,7 +574,7 @@ function renderCollection() {
     ? shown
         .map(
           (r, i) => `
-      <li>
+      <li data-open="${i}">
         <img src="${esc(r.card.image_small)}" alt="" loading="lazy">
         <div class="info">
           <div class="name"><span class="qty">${r.entryIds.length}×</span>${esc(r.card.name)}</div>
@@ -493,37 +585,15 @@ function renderCollection() {
             ${r.foil ? `<span class="tag foil">${icon("sparkle")}Foil</span>` : ""}
           </div>
         </div>
-        <div class="price">${money(r.unitPrice)}${r.entryIds.length > 1 ? `<small>${money((r.unitPrice ?? 0) * r.entryIds.length)}</small>` : ""}</div>
-        <div class="actions">
-          <button class="btn sm" data-remove="${i}">${icon("minus")}Remove</button>
-          <button class="btn sm" data-move="${i}">${icon("swords")}Move</button>
-          <button class="btn sm" data-reprint="${i}">${icon("swap")}Printing</button>
-          ${r.card.tcgplayer_url ? `<a class="btn sm" href="${esc(r.card.tcgplayer_url)}" target="_blank" rel="noopener">${icon("external")}TCGplayer</a>` : ""}
-        </div>
+        <div class="price">${money(r.unitPrice)}${r.entryIds.length > 1 ? `<small>${money((r.unitPrice ?? 0) * r.entryIds.length)}</small>` : ""}${icon("chevron", "chev-right")}</div>
       </li>`,
         )
         .join("")
     : `<li class="empty">${rows.length ? "No matches" : deck ? "No cards in this deck yet. Choose it when you start scanning." : "No cards yet. Head to Scan to add some."}</li>`;
 
-  $("#collection").onclick = async (e) => {
-    const btn = e.target.closest("button");
-    if (!btn) return;
-    const d = btn.dataset;
-    const r = shown[d.remove ?? d.move ?? d.reprint];
-    if (d.remove) {
-      store.removeCopy(r.entryIds.at(-1));
-    } else if (d.move) {
-      const deckId = await chooseDeck({ title: `Move ${r.entryIds.length > 1 ? `${r.entryIds.length} copies` : "card"} to…`, current: r.deckId });
-      if (deckId === undefined) return;
-      store.moveCopies(r.entryIds, deckId);
-      toast(`Moved to ${deckLabel(deckId)}`);
-    } else if (d.reprint) {
-      return pickPrinting(r.card.name, (card) => {
-        store.changePrinting(r.entryIds, card);
-        renderCollection();
-      });
-    }
-    renderCollection();
+  $("#collection").onclick = (e) => {
+    const row = e.target.closest("[data-open]");
+    if (row) openCardDetail(shown[row.dataset.open].entryIds);
   };
 }
 
