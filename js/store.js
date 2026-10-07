@@ -236,6 +236,24 @@ export function getCollection(place = "all", type = "all") {
   return { rows, totalCards, totalValue, typeCounts };
 }
 
+// Color breakdown: colored mana symbols across non-land, non-token cards.
+// Hybrid symbols ({W/U}) count half to each color; Phyrexian ({W/P}) and
+// twobrid ({2/W}) count fully to their color; generic and {C} aren't colors.
+export function colorBreakdown(place) {
+  const counts = { W: 0, U: 0, B: 0, R: 0, G: 0 };
+  for (const e of data.inventory) {
+    if (!inPlace(e, place)) continue;
+    const card = data.cards[e.scryfall_id];
+    if (["Land", "Token"].includes(cardType(card))) continue;
+    for (const sym of card.mana_cost?.match(/\{[^}]+\}/g) ?? []) {
+      const colors = sym.slice(1, -1).split("/").filter((c) => c in counts);
+      for (const c of colors) counts[c] += 1 / colors.length;
+    }
+  }
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  return { counts, total };
+}
+
 // Mana curve: number of non-land cards at each mana value (7 = "7+"). Tokens
 // aren't part of the deck, so they're left out too.
 export function manaCurve(place) {

@@ -657,6 +657,55 @@ function renderCommanders(deck) {
   };
 }
 
+// Pie of colored mana symbols, in fixed WUBRG order so a color never moves.
+const COLOR_NAMES = { W: "White", U: "Blue", B: "Black", R: "Red", G: "Green" };
+
+function renderColors() {
+  const deck = store.getDeck(place);
+  $("#colors").hidden = !deck;
+  if (!deck) return;
+  const { counts, total } = store.colorBreakdown(place);
+  const slices = WUBRG.filter((c) => counts[c] > 0).map((c) => ({ c, n: counts[c], share: total ? counts[c] / total : 0 }));
+  const fmt = (n) => (Number.isInteger(n) ? n : n.toFixed(1));
+  const summary = total ? `${fmt(total)} colored symbol${total === 1 ? "" : "s"}` : "No colored spells yet";
+  $("#colors-readout").textContent = summary;
+
+  // Pie slices as SVG arcs starting at 12 o'clock.
+  const R = 48, C = 50;
+  const point = (a) => [C + R * Math.sin(a), C - R * Math.cos(a)];
+  let angle = 0;
+  $("#colors-pie").innerHTML = slices.length === 1
+    ? `<circle data-c="${slices[0].c}" cx="${C}" cy="${C}" r="${R}" fill="var(--c-${slices[0].c})"/>`
+    : slices
+        .map(({ c, share }) => {
+          const a0 = angle, a1 = (angle += share * 2 * Math.PI);
+          const [x0, y0] = point(a0), [x1, y1] = point(a1);
+          return `<path data-c="${c}" fill="var(--c-${c})" d="M${C},${C} L${x0},${y0} A${R},${R} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${x1},${y1} Z"/>`;
+        })
+        .join("");
+  $("#colors-pie").setAttribute("aria-label", `Color breakdown: ${slices.map((s) => `${COLOR_NAMES[s.c]} ${Math.round(s.share * 100)}%`).join(", ") || "none"}`);
+
+  $("#colors-legend").innerHTML = slices
+    .map(
+      ({ c, n, share }) => `<li data-c="${c}" data-readout="${COLOR_NAMES[c]} · ${fmt(n)} symbol${n === 1 ? "" : "s"}">
+        <span class="swatch" style="background:var(--c-${c})"></span>${manaCost(`{${c}}`)}
+        <span class="c-name">${COLOR_NAMES[c]}</span><span class="c-pct">${Math.round(share * 100)}%</span>
+      </li>`,
+    )
+    .join("");
+
+  // Hover or tap a slice or legend row to highlight it and read its count.
+  const body = $("#colors .colors-body");
+  const show = (e) => {
+    const c = e.target.closest?.("[data-c]")?.dataset.c;
+    $("#colors-pie").classList.toggle("focus", !!c);
+    body.querySelectorAll("[data-c]").forEach((el) => el.classList.toggle("hot", el.dataset.c === c));
+    $("#colors-readout").textContent = c ? $(`#colors-legend [data-c="${c}"]`).dataset.readout : summary;
+  };
+  body.onpointerover = body.onclick = show;
+  body.onpointerleave = () => show({ target: document.body });
+}
+
 function renderCollection() {
   if (place !== "all" && place !== "extras" && !store.getDeck(place)) place = "all";
   renderPlaceChips();
@@ -666,6 +715,7 @@ function renderCollection() {
   if (deck) $("#deck-title").textContent = deck.name;
   renderCommanders(deck);
   renderCurve();
+  renderColors();
 
   const { rows, totalCards, totalValue, typeCounts } = store.getCollection(place, typeFilter);
   if (typeFilter !== "all" && !typeCounts[typeFilter]) typeFilter = "all";

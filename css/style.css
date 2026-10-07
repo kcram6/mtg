@@ -265,6 +265,25 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px v
 .curve-col.hot { color: var(--text); }
 .curve-col .mv { line-height: 16px; }
 
+/* Color breakdown pie. Slot colors validated for the dark surface (dataviz
+   validate_palette: all checks pass; closest CVD pair sits in the 6-8 band, so
+   the legend's mana symbols and percentages carry identity too). */
+:root { --c-W: #c98500; --c-U: #3987e5; --c-B: #a35fb8; --c-R: #d4433c; --c-G: #199e70; }
+.deck-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 14px; }
+.deck-charts .panel { margin-top: 0; }
+.colors-body { display: grid; grid-template-columns: 116px 1fr; gap: 16px; align-items: center; margin-top: 12px; }
+.colors-pie { width: 116px; height: 116px; overflow: visible; }
+.colors-pie path, .colors-pie circle { stroke: var(--surface); stroke-width: 1.6; stroke-linejoin: round; cursor: pointer; transition: opacity 0.15s; }
+.colors-pie.focus [data-c]:not(.hot) { opacity: 0.35; }
+.colors-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.colors-legend li { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 8px; cursor: pointer; font-size: 13.5px; }
+.colors-legend li.hot { background: var(--surface-2); }
+.colors-legend .swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.colors-legend .mana { width: 16px; height: 16px; }
+.colors-legend .c-name { flex: 1; }
+.colors-legend .c-pct { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 38px; text-align: right; }
+.colors-note { margin: 10px 0 0; font-size: 12px; color: var(--faint); }
+
 /* ---------- Settings ---------- */
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-top: 14px; }
 .panel label { display: block; margin-top: 14px; font-weight: 500; }

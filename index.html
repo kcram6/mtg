@@ -96,11 +96,21 @@
         <button id="delete-deck" class="btn ghost icon-only danger" title="Delete deck" aria-label="Delete deck"><svg class="icon"><use href="#i-trash"/></svg></button>
       </div>
       <div id="commander-panel" class="commander-panel" hidden></div>
-      <div id="curve" class="panel curve" hidden>
-        <div class="curve-head"><h2>Mana curve</h2><span id="curve-readout" class="curve-readout"></span></div>
-        <div class="curve-plot">
-          <span id="curve-max" class="curve-max"></span>
-          <div id="curve-bars" class="curve-bars" role="img"></div>
+      <div class="deck-charts">
+        <div id="curve" class="panel curve" hidden>
+          <div class="curve-head"><h2>Mana curve</h2><span id="curve-readout" class="curve-readout"></span></div>
+          <div class="curve-plot">
+            <span id="curve-max" class="curve-max"></span>
+            <div id="curve-bars" class="curve-bars" role="img"></div>
+          </div>
+        </div>
+        <div id="colors" class="panel" hidden>
+          <div class="curve-head"><h2>Colors</h2><span id="colors-readout" class="curve-readout"></span></div>
+          <div class="colors-body">
+            <svg id="colors-pie" class="colors-pie" viewBox="0 0 100 100" role="img"></svg>
+            <ul id="colors-legend" class="colors-legend"></ul>
+          </div>
+          <p class="colors-note">Colored mana symbols in non-land spells</p>
         </div>
       </div>
       <div class="stats">
