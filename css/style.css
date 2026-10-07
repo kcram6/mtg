@@ -559,6 +559,20 @@ dialog header h2 { color: var(--text); text-transform: none; letter-spacing: 0; 
 .copy-info span { font-weight: 600; }
 .copy-info small { color: var(--muted); font-size: 12px; }
 
+/* Preview of a card you don't own (from Upgrades / Wishlist) */
+.card-list li.tappable { cursor: pointer; }
+.card-list li.tappable:active { background: var(--surface-2); }
+.preview-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 16px 12px; }
+.preview-stats div { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.preview-stats strong { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
+.preview-stats small { color: var(--muted); font-size: 11.5px; }
+.oracle { margin: 0 16px 14px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; font-size: 14px; line-height: 1.5; }
+.oracle p { margin: 0 0 8px; }
+.oracle p:last-child { margin-bottom: 0; }
+.oracle .mana { width: 15px; height: 15px; vertical-align: -2px; }
+.oracle-face { font-weight: 700; font-size: 12.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 4px 0 4px; }
+.oracle .pt { font-weight: 700; text-align: right; }
+
 /* ---------- Toast ---------- */
 #toast {
   position: fixed; left: 50%; bottom: calc(86px + env(safe-area-inset-bottom)); transform: translate(-50%, 8px);

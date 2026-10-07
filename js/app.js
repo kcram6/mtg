@@ -504,6 +504,7 @@ $("#manual-add").addEventListener("click", () =>
 let detailIds = [];
 
 function openCardDetail(entryIds) {
+  preview = null;
   detailIds = [...entryIds];
   renderDetail();
   $("#card-dialog").showModal();
@@ -581,7 +582,7 @@ $("#card-detail").addEventListener("change", (e) => {
 
 $("#card-detail").addEventListener("click", async (e) => {
   const btn = e.target.closest("button");
-  if (!btn) return;
+  if (!btn || preview) return;
   const entries = detailIds.map(store.getEntry).filter(Boolean);
   const card = store.getCard(entries[0].scryfall_id);
   if (btn.dataset.remove) {
@@ -922,6 +923,7 @@ let openDeckId = null;
 let deckTab = "upgrades";
 const recState = { filter: "top", ownedOnly: false, shown: 25, sort: savedSort("mtg-rec-sort", "best") };
 const recDetails = new Map(); // Scryfall id -> full Scryfall card (image, price) for recommendations
+const edhrecCache = new Map(); // deck id -> its EDHREC recommendations
 
 const sortedIdentity = (deckId) => [...(store.commanderIdentity(deckId) ?? [])].sort((a, b) => WUBRG.indexOf(a) - WUBRG.indexOf(b));
 const artStyle = (card) => (card ? `style="--art:url('${esc(scryfall.artCrop(card))}')"` : "");
@@ -1051,6 +1053,110 @@ $("#deck-dupes").addEventListener("click", (e) => {
   toast(`Moved ${moved} extra cop${moved === 1 ? "y" : "ies"} to Extras`);
   renderDeckPage();
 });
+
+// ---------- Card preview (cards you don't own yet) ----------
+// Opened from Upgrades and the Wishlist. Uses the same sheet as the owned-card
+// detail view, but shows rules text and deck-building info instead of copies.
+let preview = null; // { card: full Scryfall card, deckId }
+
+// Rules text with mana symbols drawn as icons.
+const rulesText = (text) =>
+  esc(text ?? "")
+    .replace(/\{[^}]+\}/g, (sym) => manaCost(sym))
+    .replace(/\n/g, "<br>");
+
+async function openCardPreview(scryfallId, deckId) {
+  let card = recDetails.get(scryfallId);
+  if (!card) {
+    [card] = await scryfall.fetchMany([scryfallId]).catch(() => []);
+    if (!card) return toast("Couldn't load that card", "alert");
+    recDetails.set(card.id, card);
+  }
+  preview = { card, deckId };
+  detailIds = [];
+  renderPreview();
+  $("#card-dialog").showModal();
+}
+
+$("#card-dialog").addEventListener("close", () => {
+  if (!preview) return;
+  preview = null;
+  if (openDeckId) renderDeckPage();
+});
+
+function renderPreview() {
+  const { card: c, deckId } = preview;
+  const rec = scryfall.toCardRecord(c);
+  const faces = c.card_faces?.length && !c.oracle_text ? c.card_faces : [c];
+  const stats = edhrecCache.get(deckId)?.cards.find((x) => x.id === c.id);
+  const owned = ownedSummary(c.name, deckId);
+  const inDeck = store.deckCardNames(deckId).has(edhrec.nameKey(c.name));
+  const wished = store.onWishlist(deckId, c.name);
+  const gc = scryfall.bracketListsIfLoaded()?.gameChangers.has(c.name);
+  const cmdrName = store.getCommanders(deckId)[0]?.card.name;
+
+  $("#card-dialog-title").textContent = c.name;
+  $("#card-detail").innerHTML = `
+    <div class="detail">
+      <img class="detail-img" src="${esc(rec.image_normal ?? rec.image_small)}" alt="${esc(c.name)}">
+      <div class="detail-info">
+        <div class="mana-row">${manaCost(rec.mana_cost) || '<span class="muted">No mana cost</span>'}</div>
+        <div class="detail-type">${esc(c.type_line)}</div>
+        <div class="meta">${esc(c.set_name)} · ${esc(c.rarity)}</div>
+        <div class="price-grid">
+          <div><small>Normal</small><strong>${rec.price_usd ? `$${rec.price_usd}` : "—"}</strong></div>
+          <div><small>Foil</small><strong>${rec.price_usd_foil ? `$${rec.price_usd_foil}` : "—"}</strong></div>
+        </div>
+        <div class="tags">
+          ${inDeck ? `<span class="tag deck">${icon("check")}In this deck</span>` : ""}
+          ${owned ? `<span class="tag owned">${icon("check")}${esc(owned.label)}</span>` : ""}
+          ${wished ? `<span class="tag deck">${icon("bookmark")}On wishlist</span>` : ""}
+          ${gc ? `<span class="tag gc">Game Changer</span>` : ""}
+        </div>
+      </div>
+    </div>
+    ${
+      stats
+        ? `<div class="preview-stats">
+            <div><strong>${pct(stats.inclusion)}</strong><small>of ${esc(cmdrName?.split(",")[0] ?? "these")} decks</small></div>
+            <div><strong>${stats.synergy > 0 ? "+" : ""}${pct(stats.synergy)}</strong><small>synergy</small></div>
+            <div><strong>${stats.decks.toLocaleString()}</strong><small>decks run it</small></div>
+          </div>`
+        : ""
+    }
+    <div class="oracle">
+      ${faces.map((f) => `${faces.length > 1 ? `<div class="oracle-face">${esc(f.name)}</div>` : ""}<p>${rulesText(f.oracle_text)}</p>${f.power ? `<p class="pt">${esc(f.power)}/${esc(f.toughness)}</p>` : f.loyalty ? `<p class="pt">Loyalty ${esc(f.loyalty)}</p>` : ""}`).join("")}
+    </div>
+    <div class="detail-actions">
+      ${owned && !inDeck ? `<button class="btn primary" data-pv="move">${icon("swords")}Move here</button>` : ""}
+      ${inDeck ? "" : `<button class="btn ${wished ? "on" : ""}" data-pv="wish">${icon("bookmark")}${wished ? "On wishlist" : "Wishlist"}</button>`}
+      ${rec.tcgplayer_url ? `<a class="btn" href="${esc(rec.tcgplayer_url)}" target="_blank" rel="noopener">${icon("external")}TCGplayer</a>` : ""}
+      <a class="btn" href="https://edhrec.com/cards/${edhrec.slug(c.name)}" target="_blank" rel="noopener">${icon("external")}EDHREC</a>
+    </div>
+    <div style="height:18px"></div>`;
+}
+
+$("#card-detail").addEventListener(
+  "click",
+  (e) => {
+    if (!preview) return;
+    const btn = e.target.closest("button[data-pv]");
+    if (!btn) return;
+    e.stopImmediatePropagation(); // not an owned-card action
+    const { card, deckId } = preview;
+    if (btn.dataset.pv === "move") {
+      moveOwnedHere(card.name, deckId);
+    } else if (btn.dataset.pv === "wish") {
+      if (store.onWishlist(deckId, card.name)) store.removeFromWishlist(deckId, card.name);
+      else {
+        store.addToWishlist(deckId, card);
+        toast(`Added ${card.name} to wishlist`, "bookmark");
+      }
+    }
+    renderPreview();
+  },
+  true, // capture: runs before the owned-card handler
+);
 
 // ---------- Wins & losses ----------
 const pctText = (x) => (x == null ? "—" : `${Math.round(x * 100)}%`);
@@ -1223,6 +1329,7 @@ async function renderUpgrades(deck) {
   let recs;
   try {
     recs = await edhrec.recommendations(cmdrs.map((c) => c.card.name));
+    edhrecCache.set(deck.id, recs);
   } catch (err) {
     el.innerHTML = `<div class="commander-hint">${icon("alert")}<span>${esc(err.message)}</span></div>`;
     return;
@@ -1273,7 +1380,7 @@ async function renderUpgrades(deck) {
                 const rec = sc ? scryfall.toCardRecord(sc) : null;
                 const owned = ownedSummary(c.name, deck.id);
                 const wished = store.onWishlist(deck.id, c.name);
-                return `<li data-name="${esc(c.name)}">
+                return `<li data-name="${esc(c.name)}" data-id="${esc(c.id)}" class="tappable">
                   <img src="${esc(rec?.image_small ?? "")}" alt="" loading="lazy">
                   <div class="info">
                     <div class="name">${esc(c.name)}</div>
@@ -1316,6 +1423,7 @@ $("#deck-upgrades").addEventListener("click", (e) => {
   const row = e.target.closest("li[data-name]");
   if (!row) return;
   const name = row.dataset.name;
+  if (!e.target.closest("button, a")) return openCardPreview(row.dataset.id, deckId);
   if (e.target.closest("[data-move-here]")) {
     moveOwnedHere(name, deckId);
   } else if (e.target.closest("[data-wish]")) {
@@ -1356,7 +1464,7 @@ function renderWishlist(deck) {
           ? items
               .map((w) => {
                 const owned = ownedSummary(w.name, deck.id);
-                return `<li data-name="${esc(w.name)}">
+                return `<li data-name="${esc(w.name)}" data-id="${esc(w.scryfall_id)}" class="tappable">
                   <img src="${esc(w.image_small)}" alt="" loading="lazy">
                   <div class="info">
                     <div class="name">${esc(w.name)}</div>
@@ -1402,6 +1510,7 @@ $("#deck-wishlist").addEventListener("click", (e) => {
   }
   const row = e.target.closest("li[data-name]");
   if (!row) return;
+  if (!e.target.closest("button, a")) return openCardPreview(row.dataset.id, deckId);
   if (e.target.closest("[data-move-here]")) moveOwnedHere(row.dataset.name, deckId);
   else if (e.target.closest("[data-unwish]")) store.removeFromWishlist(deckId, row.dataset.name);
   else return;
