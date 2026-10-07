@@ -295,6 +295,9 @@ select.sort {
 .panel label { display: block; margin-top: 14px; font-weight: 500; }
 .panel label small { display: block; color: var(--muted); font-weight: 400; font-size: 12.5px; margin: 1px 0 6px; }
 #settings-msg { display: flex; align-items: center; gap: 6px; }
+.panel-text { margin: 8px 0 0; font-size: 13.5px; color: var(--muted); }
+.warn-text { display: flex; gap: 6px; align-items: flex-start; color: var(--warn); }
+.warn-text .icon { width: 16px; height: 16px; margin-top: 2px; }
 
 /* ---------- Bottom tab bar ---------- */
 .tabbar {

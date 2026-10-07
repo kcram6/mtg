@@ -24,7 +24,39 @@ const deckTag = (deckId) =>
 
 // ---------- Settings ----------
 const SETTINGS_KEY = "mtg-settings";
+const SETTING_FIELDS = ["readerMode", "anthropicKey", "githubRepo", "githubToken"];
 let settings = { readerMode: "free-first", anthropicKey: "", githubRepo: "", githubToken: "", ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") };
+
+// Setup link: the settings packed into the URL fragment (#setup=...), which
+// browsers never send to the server. Opening it restores everything.
+const toBase64Url = (str) => btoa(String.fromCharCode(...new TextEncoder().encode(str))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const fromBase64Url = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)));
+
+function setupLink() {
+  const packed = Object.fromEntries(SETTING_FIELDS.filter((k) => settings[k]).map((k) => [k, settings[k]]));
+  return `${location.origin}${location.pathname}#setup=${toBase64Url(JSON.stringify(packed))}`;
+}
+
+const restoredFromLink = (() => {
+  const match = location.hash.match(/^#setup=([\w-]+)$/);
+  if (!match) return false;
+  history.replaceState(null, "", location.pathname + location.search); // don't leave secrets in the address bar
+  try {
+    const restored = JSON.parse(fromBase64Url(match[1]));
+    for (const k of SETTING_FIELDS) if (typeof restored[k] === "string") settings[k] = restored[k];
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+// A setup link opened while the app is already showing only changes the
+// fragment, which doesn't reload the page; reload so it's applied above.
+window.addEventListener("hashchange", () => location.hash.startsWith("#setup=") && location.reload());
+
+// Ask the browser not to clear this app's storage on its own.
+navigator.storage?.persist?.().catch(() => {});
 
 const form = $("#settings-form");
 for (const [k, v] of Object.entries(settings)) if (form.elements[k]) form.elements[k].value = v;
@@ -39,6 +71,29 @@ form.addEventListener("submit", (e) => {
   settingsMsg(`${icon("check", "accent")}Saved`);
   syncNow();
 });
+
+// Copy or share the setup link so it can be saved in Passwords or Notes.
+async function shareSetupLink(e) {
+  if (!settings.githubToken && !settings.anthropicKey) return settingsMsg(`${icon("alert")}Save your settings first`);
+  const url = setupLink();
+  if (e.currentTarget.id === "share-setup" && navigator.share) {
+    try {
+      await navigator.share({ title: "MTG Collection setup link", url });
+      return settingsMsg(`${icon("check", "accent")}Shared. Keep it somewhere private.`);
+    } catch (err) {
+      if (err.name === "AbortError") return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    settingsMsg(`${icon("check", "accent")}Setup link copied. Paste it into Passwords or Notes.`);
+  } catch {
+    prompt("Copy your setup link:", url);
+  }
+}
+$("#copy-setup").addEventListener("click", shareSetupLink);
+$("#share-setup").addEventListener("click", shareSetupLink);
+$("#share-setup").hidden = !navigator.share;
 
 $("#test-github").addEventListener("click", async () => {
   settingsMsg(`${icon("loader", "spin")}Checking…`);
@@ -1171,6 +1226,7 @@ $("#deck-wishlist").addEventListener("click", (e) => {
 });
 
 // ---------- Start ----------
+if (restoredFromLink) setTimeout(() => toast("Settings restored from your setup link"), 300);
 renderRecent();
 updateSyncPill();
 syncNow().then(async () => {

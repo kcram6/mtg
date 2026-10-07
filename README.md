@@ -40,6 +40,11 @@ Enter the data repo (`your-username/mtg-data`), the GitHub token and, optionally
 
 The token and key are stored **only in that browser** (localStorage). They're never in the code or the repo.
 
+### 6. Save a setup link
+In Settings, tap **Copy link** (or **Share to…**) under **Setup link** and save it in the Passwords app or Notes. If the browser ever clears the app's data, open that link: your settings come back, and your cards reload from GitHub. The settings live after the `#` in the link, which browsers never send to any server, but anyone holding the link can use your keys, so keep it private.
+
+Tip: on iPhone, use the app from the **Home Screen**. Safari clears data for websites that haven't been visited in 7 days, but Home Screen apps are exempt.
+
 ## Tips for scanning
 - Good, even lighting, with no glare across the name bar or bottom-left corner.
 - Fill the frame with the card.
